@@ -1,9 +1,10 @@
-// server.js — Hey Bori Cash Flow™
-// Zero dependencies. Works on Render. ES→EN UI. Health endpoint.
-// Env:
+// server.js — Hey Bori Cash Flow™ (English-only text in UI messages)
+// Zero dependencies. Render-ready. Works with ledger.js.
+//
+// ENV:
 // PORT (injected by Render)
-// DATA_DIR=/data (required for persistence)
-// FORCE_DOMAIN=cash.heybori.co (optional; add AFTER TLS is issued)
+// DATA_DIR=/data (required for persistence; mount a disk at /data)
+// FORCE_DOMAIN=cash.heybori.co (optional; enable after TLS on custom domain)
 // CSP_ANCESTORS="https://heybori.co https://www.heybori.co https://chat.heybori.co https://cash.heybori.co" (optional)
 
 process.on('uncaughtException', e => console.error('[uncaughtException]', e));
@@ -18,6 +19,7 @@ const FORCE_DOMAIN = (process.env.FORCE_DOMAIN || '').trim();
 const CSP_ANCESTORS_RAW = process.env.CSP_ANCESTORS ||
 'https://heybori.co https://www.heybori.co https://chat.heybori.co https://cash.heybori.co';
 
+// ---------- helpers ----------
 function sanitizeSpace(s){ return String(s||'').replace(/[\r\n'"]/g,' ').replace(/\s+/g,' ').trim(); }
 function buildFrameAncestors(raw){
 const list = sanitizeSpace(raw).split(/[,\s]+/).filter(Boolean);
@@ -30,6 +32,7 @@ function html(res, s){ send(res, 200, {'Content-Type':'text/html; charset=utf-8'
 function json(res, code, obj){ send(res, code, {'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','Content-Security-Policy':CSP_VALUE}, JSON.stringify(obj)); }
 function text(res, code, s){ send(res, code, {'Content-Type':'text/plain; charset=utf-8','Cache-Control':'no-store','Content-Security-Policy':CSP_VALUE}, String(s)); }
 
+// Optional: redirect *.onrender.com → FORCE_DOMAIN
 function maybeRedirectToCustomDomain(req, res, u){
 if (!FORCE_DOMAIN) return false;
 const host = (u.host||'').toLowerCase();
@@ -42,8 +45,9 @@ return true;
 return false;
 }
 
+// ---------- UI ----------
 const PAGE = `<!doctype html>
-<html lang="es">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -64,6 +68,7 @@ label{font:700 12px system-ui;display:block;margin-bottom:6px;color:#223}
 input,select{padding:10px;border:1px solid #ddd;border-radius:10px;font:600 14px system-ui}
 input[type="number"]{max-width:140px}
 button.primary{background:#0a3a78;color:#fff;border:1px solid #0c2a55;border-radius:10px;padding:10px 14px;font:800 14px system-ui;cursor:pointer}
+button{cursor:pointer}
 .table{width:100%;border-collapse:collapse}
 .table th,.table td{border-bottom:1px solid #eee;padding:8px 6px;text-align:left;font:600 13px system-ui}
 .kpis{display:flex;gap:10px;flex-wrap:wrap}
@@ -72,7 +77,7 @@ button.primary{background:#0a3a78;color:#fff;border:1px solid #0c2a55;border-rad
 .kpi .val{font:800 18px system-ui}
 footer{padding:14px 16px;color:#fff;opacity:.92}
 .small{font:600 12px/1.4 system-ui}
-.notice{margin-top:6px;color:#0a3a78}
+.notice{margin-top:6px;color:#0a3a78;min-height:18px}
 @media (max-width:480px){
 header{padding:12px}
 main{padding:10px}
@@ -84,7 +89,7 @@ main{padding:10px}
 <header>
 <div>
 <h1>Hey Bori Cash Flow™</h1>
-<div class="sub">ES primero, luego EN · Registra ingresos y gastos / Spanish first, then English</div>
+<div class="sub">Simple, fast ledger for youth basketball teams</div>
 </div>
 <div>
 <button id="btnExport" class="primary" title="Export CSV">Export CSV</button>
@@ -93,31 +98,31 @@ main{padding:10px}
 
 <main>
 <div class="card">
-<label>Agregar transacción / Add transaction</label>
+<label>Add transaction</label>
 <div class="row">
 <select id="type">
-<option value="income">Ingreso / Income</option>
-<option value="expense">Gasto / Expense</option>
+<option value="income">Income</option>
+<option value="expense">Expense</option>
 </select>
-<input id="amount" type="number" step="0.01" min="0" placeholder="Monto / Amount">
-<input id="category" placeholder="Categoría / Category (e.g., uniforms)">
-<input id="note" placeholder="Nota / Note (opcional)">
+<input id="amount" type="text" inputmode="decimal" placeholder="Amount (e.g. 10 or $10)">
+<input id="category" placeholder="Category (e.g., fundraiser, uniforms)">
+<input id="note" placeholder="Note (optional)">
 <input id="date" type="date">
-<button id="btnAdd" class="primary">Add / Agregar</button>
+<button id="btnAdd" class="primary">Add</button>
 </div>
 <div id="msg" class="small notice"></div>
 </div>
 
 <div class="kpis">
-<div class="kpi"><h3>Ingresos / Income (30d)</h3><div class="val" id="kIncome">$0.00</div></div>
-<div class="kpi"><h3>Gastos / Expenses (30d)</h3><div class="val" id="kExpense">$0.00</div></div>
-<div class="kpi"><h3>Neto / Net (30d)</h3><div class="val" id="kNet">$0.00</div></div>
+<div class="kpi"><h3>Income (30d)</h3><div class="val" id="kIncome">$0.00</div></div>
+<div class="kpi"><h3>Expenses (30d)</h3><div class="val" id="kExpense">$0.00</div></div>
+<div class="kpi"><h3>Net (30d)</h3><div class="val" id="kNet">$0.00</div></div>
 </div>
 
 <div class="card">
-<label>Transacciones recientes / Recent transactions</label>
+<label>Recent transactions</label>
 <table class="table" id="tbl">
-<thead><tr><th>Fecha / Date</th><th>Tipo / Type</th><th>Categoría</th><th>Monto</th><th>Nota</th></tr></thead>
+<thead><tr><th>Date</th><th>Type</th><th>Category</th><th>Amount</th><th>Note</th></tr></thead>
 <tbody></tbody>
 </table>
 </div>
@@ -156,25 +161,44 @@ tbody.appendChild(tr);
 }
 
 document.getElementById('btnAdd').addEventListener('click', async ()=>{
-const type=document.getElementById('type').value;
-const amount=parseFloat(document.getElementById('amount').value||'0');
-const category=(document.getElementById('category').value||'').trim();
-const note=(document.getElementById('note').value||'').trim();
-const dateEl=document.getElementById('date').value;
-const date = dateEl ? new Date(dateEl+'T12:00:00') : null;
+const type = (document.getElementById('type').value || '').trim();
 
-const msg=document.getElementById('msg'); msg.textContent='';
+// Accept $10 or 10
+const amtRaw = (document.getElementById('amount').value || '').toString().replace(/[^0-9.\-]/g,'');
+const amount = parseFloat(amtRaw);
+
+const category = (document.getElementById('category').value || '').trim();
+const note = (document.getElementById('note').value || '').trim();
+const dateEl = (document.getElementById('date').value || '').trim();
+const date = dateEl ? new Date(dateEl + 'T12:00:00Z').toISOString() : null;
+
+const msg = document.getElementById('msg');
+msg.textContent = '';
+
+if (!category) { msg.textContent = 'Category required'; return; }
+if (!isFinite(amount) || amount <= 0) { msg.textContent = 'Amount invalid — use 10.00'; return; }
+
 try{
-await api('/api/ledger/add',{method:'POST',headers:{'content-type':'application/json'},
-body: JSON.stringify({ type, amount, category, note, date })});
-msg.textContent = 'Registrado ✓ / Recorded ✓';
+const r = await fetch('/api/ledger/add', {
+method: 'POST',
+headers: {'content-type':'application/json'},
+body: JSON.stringify({ type, amount, category, note, date })
+});
+const data = await r.json().catch(()=>({ok:false, error:'Invalid server response'}));
+
+if (!r.ok || !data.ok) {
+msg.textContent = 'Error: ' + (data.error || r.statusText || 'check input');
+return;
+}
+
+msg.textContent = 'Recorded ✓';
 document.getElementById('amount').value='';
 document.getElementById('category').value='';
 document.getElementById('note').value='';
 document.getElementById('date').value='';
 refresh();
 }catch(e){
-msg.textContent = 'Error — verifica los datos / check input';
+msg.textContent = 'Error: ' + (e.message || 'network');
 }
 });
 
@@ -187,9 +211,11 @@ refresh();
 </body>
 </html>`;
 
+// ---------- server & routes ----------
 const server = http.createServer((req, res) => {
 const u = new URL(req.url, 'http://' + (req.headers.host || 'localhost'));
 
+// Optional redirect to custom domain
 if (maybeRedirectToCustomDomain(req, res, u)) return;
 
 // Health
@@ -202,26 +228,47 @@ if (req.method === 'GET' && u.pathname === '/') {
 return html(res, PAGE);
 }
 
-// APIs
+// --- API: add entry (robust parse & validate) ---
 if (req.method === 'POST' && u.pathname === '/api/ledger/add') {
-let body=''; req.on('data', c => body += c);
+let body = '';
+req.on('data', c => body += c);
 req.on('end', () => {
-try{
-const j = JSON.parse(body||'{}');
-const entry = ledger.add({ type:j.type, amount:j.amount, category:j.category, note:j.note, date:j.date });
-return json(res, 200, { ok:true, entry });
-}catch(e){
-return json(res, 400, { ok:false, error: e.message || String(e) });
+try {
+const j = JSON.parse(body || '{}');
+
+const type = (j.type === 'expense') ? 'expense' : 'income';
+
+// Accept "10", "10.00", "$10"
+const amount = parseFloat(String(j.amount ?? '').replace(/[^0-9.\-]/g, ''));
+const category = String(j.category ?? '').trim();
+const note = String(j.note ?? '').trim();
+
+// Date: ISO, "YYYY-MM-DD", or now
+let d = j.date ? new Date(j.date) : new Date();
+if (String(j.date || '').match(/^\d{4}-\d{2}-\d{2}$/)) {
+d = new Date(String(j.date) + 'T12:00:00Z');
+}
+if (isNaN(d.getTime())) d = new Date();
+
+if (!isFinite(amount) || amount <= 0) throw new Error('Amount must be a number greater than 0');
+if (!category) throw new Error('Category is required');
+
+const entry = ledger.add({ type, amount, category, note, date: d });
+return json(res, 200, { ok: true, entry });
+} catch (e) {
+return json(res, 400, { ok: false, error: String(e.message || e) });
 }
 });
 return;
 }
 
+// List
 if (req.method === 'GET' && u.pathname === '/api/ledger/list') {
 try { return json(res, 200, { ok:true, rows: ledger.list() }); }
 catch(e){ return json(res, 500, { ok:false, error:String(e) }); }
 }
 
+// Summary
 if (req.method === 'GET' && u.pathname === '/api/ledger/summary') {
 try {
 const days = Math.max(1, Math.min(365, Number(u.searchParams.get('range')||30)));
@@ -231,6 +278,7 @@ return json(res, 500, { ok:false, error:String(e) });
 }
 }
 
+// Export CSV
 if (req.method === 'GET' && u.pathname === '/api/ledger/export.csv') {
 try{
 const csv = ledger.toCSV();
@@ -246,6 +294,7 @@ return json(res, 500, { ok:false, error:String(e) });
 }
 }
 
+// 404
 return text(res, 404, 'Not Found');
 });
 
