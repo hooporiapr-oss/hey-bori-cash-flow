@@ -1,4 +1,4 @@
-// Hey Bori Cash Flow — Baseline (simple + stable)
+// Hey Bori Cash Flow — Baseline (self-healing storage)
 // Endpoints:
 // GET /health
 // GET / -> HTML UI (add/list/summary/export)
@@ -20,13 +20,37 @@ const PORT = Number(process.env.PORT || 10000);
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data'); // Render: mount Disk at /data
 const LEDGER_FN = path.join(DATA_DIR, 'ledger.json');
 
-// ---------- storage ----------
+// ---------- storage (self-healing) ----------
 function ensureStore(){
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, {recursive:true});
-if (!fs.existsSync(LEDGER_FN)) fs.writeFileSync(LEDGER_FN, JSON.stringify({entries:[]}, null, 2));
+if (!fs.existsSync(LEDGER_FN)){
+fs.writeFileSync(LEDGER_FN, JSON.stringify({entries:[]}, null, 2));
 }
-function readDB(){ ensureStore(); return JSON.parse(fs.readFileSync(LEDGER_FN, 'utf8')); }
-function writeDB(db){ fs.writeFileSync(LEDGER_FN, JSON.stringify(db, null, 2)); }
+}
+
+// Always return an object with .entries = []
+function readDB(){
+ensureStore();
+try{
+const raw = fs.readFileSync(LEDGER_FN, 'utf8');
+const data = raw?.trim() ? JSON.parse(raw) : {};
+if (!data || typeof data !== 'object') return {entries:[]};
+if (!Array.isArray(data.entries)) data.entries = [];
+return data;
+}catch(e){
+console.error('[readDB] repair ledger.json:', e.message);
+const fresh = {entries:[]};
+try{ fs.writeFileSync(LEDGER_FN, JSON.stringify(fresh,null,2)); }catch(_) {}
+return fresh;
+}
+}
+
+function writeDB(db){
+// guarantee shape before write
+if (!db || typeof db !== 'object') db = {entries:[]};
+if (!Array.isArray(db.entries)) db.entries = [];
+fs.writeFileSync(LEDGER_FN, JSON.stringify(db, null, 2));
+}
 
 // ---------- helpers ----------
 function send(res, code, headers, body){ res.writeHead(code, headers); res.end(body); }
@@ -85,8 +109,8 @@ createdAt: Date.now(),
 updatedAt: Date.now()
 };
 
-const db = readDB();
-db.entries.unshift(entry); // newest first
+const db = readDB(); // <- always has entries:[]
+db.entries.unshift(entry); // <- safe now
 writeDB(db);
 return json(res,200,{ok:true, entry});
 }catch(e){
