@@ -1,22 +1,23 @@
-// Hey Bori Cash Flow — Pro (Programs + Auth + Filters + Charts)
-// Features:
-// 1) Program auto-suggest from history
-// 2) Per-Program mini totals in Ledger
-// 3) Filtered CSV export (?from,to,team,league,program)
-// 4) Simple auth (PIN) via COACH_PIN env
-// 5) Charts (Income vs Expense) — pure Canvas, no deps
+// Hey Bori Cash Flow — Pro + Multi-PIN Programs (self-healing, filters, charts)
+//
+// Auth modes (runtime, via env):
+// - MULTI: COACH_PINS="pin:Program,otherpin:Other Program" -> each PIN scoped to its Program
+// - SINGLE: COACH_PIN="1628" -> one PIN, no Program scope
+// - NONE: (no env) -> open app
 //
 // Endpoints:
 // GET /health
-// GET / -> HTML UI (login if COACH_PIN set)
-// POST /api/login -> {pin} -> {ok, token}
+// GET / -> UI (login appears if auth required)
+// GET /api/session -> {authRequired, mode, programScope|null}
+// POST /api/login -> {pin} -> {ok, token, program|null, mode}
 // GET /api/ledger/meta -> {teams[], leagues[], categories[], programs[]}
 // POST /api/ledger/add -> {...}
-// GET /api/ledger/list
-// GET /api/ledger/summary?range=30
-// GET /api/ledger/export.csv?from=&to=&team=&league=&program=
+// GET /api/ledger/list -> ?from&to&team&league&program (program constrained by scope if any)
+// GET /api/ledger/summary -> ?range=30 (constrained by scope if any)
+// GET /api/ledger/export.csv -> filters; constrained by scope if any
 //
-// Render: Build=true, Start=node server.js, Env: DATA_DIR=/data (+ Disk), optional COACH_PIN
+// Render: Build=true, Start=node server.js, Env: DATA_DIR=/data (+ Disk)
+// Optional: COACH_PINS or COACH_PIN
 
 process.on('uncaughtException', e => console.error('[uncaughtException]', e));
 process.on('unhandledRejection', e => console.error('[unhandledRejection]', e));
@@ -30,16 +31,53 @@ const crypto = require('crypto');
 const PORT = Number(process.env.PORT || 10000);
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const LEDGER_FN = path.join(DATA_DIR, 'ledger.json');
-const COACH_PIN = process.env.COACH_PIN || ''; // optional simple auth
 
-// ---------- auth helpers ----------
-function pinHash(pin){ return crypto.createHash('sha256').update(String(pin)).digest('hex'); }
-const EXPECTED_HASH = COACH_PIN ? pinHash(COACH_PIN) : null;
+const ENV_PINS = (process.env.COACH_PINS || '').trim(); // "pin:Program,otherpin:Other Program"
+const SINGLE_PIN = (process.env.COACH_PIN || '').trim();
 
-function authOk(req){
-if (!EXPECTED_HASH) return true;
+function sha256(s){ return crypto.createHash('sha256').update(String(s)).digest('hex'); }
+
+// ---- Auth mode detection ----
+let AUTH_MODE = 'none'; // 'none' | 'single' | 'multi'
+let SINGLE_HASH = null;
+let PIN_MAP = []; // [{pin, program, hash}], for multi
+let HASH_TO_PROGRAM = new Map();
+
+if (ENV_PINS){
+AUTH_MODE = 'multi';
+// Parse COACH_PINS (comma/newline separated)
+const parts = ENV_PINS.split(/[,;\n\r]+/).map(s=>s.trim()).filter(Boolean);
+for (const p of parts){
+const idx = p.indexOf(':');
+if (idx>0){
+const pin = p.slice(0,idx).trim();
+const program = p.slice(idx+1).trim();
+if(pin){
+const hash = sha256(pin);
+PIN_MAP.push({pin, program, hash});
+HASH_TO_PROGRAM.set(hash, program);
+}
+}
+}
+if (PIN_MAP.length === 0) AUTH_MODE = 'none';
+}else if (SINGLE_PIN){
+AUTH_MODE = 'single';
+SINGLE_HASH = sha256(SINGLE_PIN);
+}else{
+AUTH_MODE = 'none';
+}
+
+function getAuth(req){
+// Returns {ok:boolean, programScope:null|string}
+if (AUTH_MODE === 'none') return {ok:true, programScope:null};
 const token = String(req.headers['x-auth'] || '').trim();
-return token && token === EXPECTED_HASH;
+if (!token) return {ok:false, programScope:null};
+if (AUTH_MODE === 'single'){
+return {ok: token === SINGLE_HASH, programScope:null};
+}
+// multi
+if (HASH_TO_PROGRAM.has(token)) return {ok:true, programScope: HASH_TO_PROGRAM.get(token)};
+return {ok:false, programScope:null};
 }
 
 // ---------- storage (self-healing) ----------
@@ -74,8 +112,67 @@ fs.writeFileSync(LEDGER_FN, JSON.stringify(db, null, 2));
 function send(res, code, headers, body){ res.writeHead(code, headers); res.end(body); }
 function text(res, code, s){ send(res, code, {'Content-Type':'text/plain; charset=utf-8','Cache-Control':'no-store'}, String(s)); }
 function json(res, code, obj){ send(res, code, {'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}, JSON.stringify(obj)); }
+function uuid(){ return crypto.randomUUID ? crypto.randomUUID() : (Date.now().toString(36)+Math.random().toString(36).slice(2)); }
+function toNumber(x){ const n = Number(x); return isFinite(n) ? n : NaN; }
+function todayISO(){ return new Date().toISOString().slice(0,10); }
+function clampISODate(s){ return (/^\d{4}-\d{2}-\d{2}$/.test(String(s||''))) ? s : todayISO(); }
+function csvEsc(s){ s=(s==null?'':String(s)); return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s; }
 
-function parseBody(req){
+function applyFilters(rows, q, programScope){
+let r = rows;
+const from = q.get('from'), to = q.get('to');
+const team = (q.get('team')||'').trim();
+const league = (q.get('league')||'').trim();
+let program = (q.get('program')||'').trim();
+
+if (programScope){ program = programScope; } // force scope if present
+
+if (team) r = r.filter(e => (e.team||'')===team);
+if (league) r = r.filter(e => (e.league||'')===league);
+if (program) r = r.filter(e => (e.program||'')===program);
+
+if (from || to){
+const fromT = from ? new Date(from).getTime() : -Infinity;
+const toT = to ? new Date(to).getTime()+86400000-1 : +Infinity;
+r = r.filter(e=>{
+const t = new Date(e.date||todayISO()).getTime();
+return isFinite(t) && t>=fromT && t<=toT;
+});
+}
+return r;
+}
+
+// ---------- API ----------
+async function sessionInfo(req, res){
+const a = getAuth(req);
+const authRequired = AUTH_MODE !== 'none';
+const mode = AUTH_MODE;
+return json(res,200,{ok:true, authRequired, mode, programScope: a.ok ? a.programScope : null});
+}
+
+async function login(req, res){
+if (AUTH_MODE === 'none') return json(res,200,{ok:true, token:null, program:null, mode:'none'});
+const body = await (new Promise(resolve=>{
+let b=''; req.on('data',c=>{ b+=c; if (b.length>1e6) req.destroy(); });
+req.on('end', ()=>{ try{ resolve(JSON.parse(b||'{}')); }catch{ resolve({}); } });
+}));
+const pin = String(body.pin||'').trim();
+if (!pin) return json(res,400,{ok:false,error:'pin required'});
+
+if (AUTH_MODE === 'single'){
+const token = sha256(pin);
+if (token !== SINGLE_HASH) return json(res,403,{ok:false,error:'invalid pin'});
+return json(res,200,{ok:true, token, program:null, mode:'single'});
+}
+
+// multi
+const token = sha256(pin);
+const program = HASH_TO_PROGRAM.get(token);
+if (!program) return json(res,403,{ok:false,error:'invalid pin'});
+return json(res,200,{ok:true, token, program, mode:'multi'});
+}
+
+async function parseBody(req){
 return new Promise(resolve=>{
 let b=''; req.on('data',c=>{ b+=c; if (b.length>1e6) req.destroy(); });
 req.on('end', ()=>{
@@ -95,47 +192,10 @@ try{ return resolve(b?JSON.parse(b):{}); }catch{ return resolve({}); }
 });
 });
 }
-function uuid(){ return crypto.randomUUID ? crypto.randomUUID() : (Date.now().toString(36)+Math.random().toString(36).slice(2)); }
-function toNumber(x){ const n = Number(x); return isFinite(n) ? n : NaN; }
-function todayISO(){ return new Date().toISOString().slice(0,10); }
-function clampISODate(s){ return (/^\d{4}-\d{2}-\d{2}$/.test(String(s||''))) ? s : todayISO(); }
-function csvEsc(s){ s=(s==null?'':String(s)); return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s; }
-
-function applyFilters(rows, q){
-let r = rows;
-const from = q.get('from'), to = q.get('to');
-const team = (q.get('team')||'').trim();
-const league = (q.get('league')||'').trim();
-const program = (q.get('program')||'').trim();
-
-if (team) r = r.filter(e => (e.team||'')===team);
-if (league) r = r.filter(e => (e.league||'')===league);
-if (program)r = r.filter(e => (e.program||'')===program);
-
-if (from || to){
-const fromT = from ? new Date(from).getTime() : -Infinity;
-const toT = to ? new Date(to).getTime()+86400000-1 : +Infinity;
-r = r.filter(e=>{
-const t = new Date(e.date||todayISO()).getTime();
-return isFinite(t) && t>=fromT && t<=toT;
-});
-}
-return r;
-}
-
-// ---------- API ----------
-async function login(req, res){
-if (!EXPECTED_HASH) return json(res,200,{ok:true, token:null, message:'Auth not required'});
-const body = await parseBody(req);
-const pin = String(body.pin||'');
-if (!pin) return json(res,400,{ok:false,error:'pin required'});
-const token = pinHash(pin);
-if (token !== EXPECTED_HASH) return json(res,403,{ok:false,error:'invalid pin'});
-return json(res,200,{ok:true, token});
-}
 
 async function handleAdd(req, res){
-if (!authOk(req)) return json(res,401,{ok:false,error:'auth required'});
+const a = getAuth(req);
+if (!a.ok) return json(res,401,{ok:false,error:'auth required'});
 try{
 const body = await parseBody(req);
 if (body.__parseError) return json(res,400,{ok:false,error:body.__parseError});
@@ -146,6 +206,9 @@ if (!['income','expense'].includes(type)) return json(res,400,{ok:false,error:'t
 const amount = toNumber(body.amount);
 if (isNaN(amount) || amount <= 0) return json(res,400,{ok:false,error:'amount must be a positive number'});
 
+// Enforce program scope in MULTI mode: override program to scoped value
+const program = a.programScope ? a.programScope : (body.program||'').trim();
+
 const entry = {
 id: uuid(),
 type,
@@ -155,7 +218,7 @@ note: (body.note||'').trim(),
 date: clampISODate(body.date),
 team: (body.team||'').trim(),
 league: (body.league||'').trim(),
-program: (body.program||'').trim(),
+program,
 createdAt: Date.now(),
 updatedAt: Date.now()
 };
@@ -171,21 +234,26 @@ return json(res,500,{ok:false,error:'server add error: '+(e.message||e)});
 }
 
 function meta(req, res){
-if (!authOk(req)) return json(res,401,{ok:false,error:'auth required'});
+const a = getAuth(req);
+if (!a.ok) return json(res,401,{ok:false,error:'auth required'});
 try{
 const db = readDB();
+let rows = [...(db.entries||[])];
+if (a.programScope){ rows = rows.filter(e => (e.program||'')===a.programScope); }
+
 const teams = new Set(), leagues = new Set(), cats = new Set(), progs = new Set();
-for (const e of (db.entries||[])){
+for (const e of rows){
 if (e.team) teams.add(e.team);
 if (e.league) leagues.add(e.league);
 if (e.category) cats.add(e.category);
 if (e.program) progs.add(e.program);
 }
 return json(res,200,{ok:true,
-teams:[...teams].sort((a,b)=>a.localeCompare(b)),
-leagues:[...leagues].sort((a,b)=>a.localeCompare(b)),
-categories:[...cats].sort((a,b)=>a.localeCompare(b)),
-programs:[...progs].sort((a,b)=>a.localeCompare(b))
+teams:[...teams].sort((x,y)=>x.localeCompare(y)),
+leagues:[...leagues].sort((x,y)=>x.localeCompare(y)),
+categories:[...cats].sort((x,y)=>x.localeCompare(y)),
+programs:[...progs].sort((x,y)=>x.localeCompare(y)),
+scope: a.programScope || null
 });
 }catch(e){
 return json(res,500,{ok:false,error:'server meta error: '+(e.message||e)});
@@ -193,11 +261,12 @@ return json(res,500,{ok:false,error:'server meta error: '+(e.message||e)});
 }
 
 function listEntries(req, res, u){
-if (!authOk(req)) return json(res,401,{ok:false,error:'auth required'});
+const a = getAuth(req);
+if (!a.ok) return json(res,401,{ok:false,error:'auth required'});
 try{
 const db = readDB();
 let out = [...(db.entries||[])];
-out = applyFilters(out, u.searchParams);
+out = applyFilters(out, u.searchParams, a.programScope);
 out.sort((a,b)=>{
 const d = String(b.date||'').localeCompare(String(a.date||''));
 return d || ((b.createdAt||0) - (a.createdAt||0));
@@ -209,15 +278,17 @@ return json(res,500,{ok:false,error:'server list error: '+(e.message||e)});
 }
 
 function summarize(req, res, u){
-if (!authOk(req)) return json(res,401,{ok:false,error:'auth required'});
+const a = getAuth(req);
+if (!a.ok) return json(res,401,{ok:false,error:'auth required'});
 try{
 const days = Math.max(1, Math.min(365, Number(u.searchParams.get('range') || 30)));
 const cutoff = Date.now() - days*24*60*60*1000;
 const db = readDB();
-const within = (db.entries||[]).filter(e=>{
+let within = (db.entries||[]).filter(e=>{
 const t = new Date(e.date||todayISO()).getTime();
 return isFinite(t) && t >= cutoff;
 });
+if (a.programScope) within = within.filter(e => (e.program||'')===a.programScope);
 
 let income=0, expense=0;
 const byCat = {}, byTL = {}, byProgram = {};
@@ -249,11 +320,12 @@ return json(res,500,{ok:false,error:'server summary error: '+(e.message||e)});
 }
 
 function exportCSV(req, res, u){
-if (!authOk(req)) return text(res,401,'auth required');
+const a = getAuth(req);
+if (!a.ok) return text(res,401,'auth required');
 try{
 const db = readDB();
 let rows = [...(db.entries||[])];
-rows = applyFilters(rows, u.searchParams);
+rows = applyFilters(rows, u.searchParams, a.programScope);
 const out = [
 ['id','date','type','amount','category','note','team','league','program','createdAt','updatedAt'].map(csvEsc).join(',')
 ];
@@ -278,7 +350,6 @@ return text(res,500,'CSV error: '+(e.message||e));
 
 // ---------- UI ----------
 function uiHTML(){
-// If COACH_PIN is set, UI will show a login card and attach X-Auth on all fetches.
 return `<!doctype html>
 <html lang="en">
 <head>
@@ -304,25 +375,24 @@ button{cursor:pointer}
 .row{display:flex;gap:8px;flex-wrap:wrap}
 .col{flex:1;min-width:160px}
 .primary{background:linear-gradient(90deg,var(--accent),var(--accent2));border:none;color:#071318;font-weight:700}
-.danger{background:#2b0f12;border:1px solid #71212a;color:#ffd3d6}
+.small{font-size:12px;color:var(--muted)}
 table{width:100%;border-collapse:collapse;margin-top:8px}
 th,td{border-bottom:1px solid var(--line);padding:8px 6px;font-size:13px;text-align:left;vertical-align:top}
 th{color:#c8d3e6;font-weight:600}
 .right{text-align:right}
-.small{font-size:12px;color:var(--muted)}
-a{color:#80bfff}
 canvas{width:100%;max-width:680px;height:280px;background:#0d1220;border:1px solid #233040;border-radius:10px}
 .hidden{display:none}
+.pill{display:inline-block;padding:2px 8px;border:1px solid #29415f;border-radius:999px;background:#0b1320;color:#bcd3f0;margin-left:8px;font-size:12px}
 </style>
 </head>
 <body>
 <header>
-<h1>Hey Bori Cash Flow</h1>
+<h1>Hey Bori Cash Flow <span id="scopePill" class="pill hidden"></span></h1>
 <div class="sub">Simple • Fast • For youth teams & leagues</div>
 </header>
 
 <main>
-<!-- Login Card (shown only if server requires PIN) -->
+<!-- Login (shown only if auth required and no token) -->
 <section id="loginCard" class="card hidden">
 <h3 style="margin:0 0 8px 0">Coach Login</h3>
 <label>PIN</label>
@@ -432,38 +502,59 @@ canvas{width:100%;max-width:680px;height:280px;background:#0d1220;border:1px sol
 <script>
 const $ = sel => document.querySelector(sel);
 let TOKEN = localStorage.getItem('hb_token') || null;
-const AUTH_REQUIRED = ${EXPECTED_HASH ? 'true' : 'false'};
+let SESSION = {authRequired:false, mode:'none', programScope:null};
 
 function authHeaders(h={}){ if (TOKEN) h['x-auth'] = TOKEN; return h; }
-async function fetchAuthed(url, opts={}){
-opts.headers = authHeaders(opts.headers || {});
-return fetch(url, opts);
+async function fetchAuthed(url, opts={}){ opts.headers = authHeaders(opts.headers || {}); return fetch(url, opts); }
+
+function show(el, vis){ el.classList.toggle('hidden', !vis); }
+function showApp(vis){
+['chartsCard','addCard','summaryCard','ledgerCard'].forEach(id=> show($('#'+id), vis));
+}
+function setScopeBadge(scope){
+const pill = $('#scopePill');
+if (scope){
+pill.textContent = 'Program: '+scope;
+show(pill, true);
+}else{
+show(pill, false);
+}
+}
+function lockProgramIfScoped(){
+const input = $('#program'), dl = $('#programList');
+if (SESSION.programScope){
+input.value = SESSION.programScope;
+input.readOnly = true;
+if (dl) dl.innerHTML = '';
+}else{
+input.readOnly = false;
+}
+}
+function updateCsvLink(){
+const qs = new URLSearchParams();
+if (SESSION.programScope) qs.set('program', SESSION.programScope);
+$('#csvLink').href = '/api/ledger/export.csv' + (qs.toString()?('?'+qs.toString()):'');
 }
 
-// ---- Login flow ----
-function showApp(show){
-const ids = ['chartsCard','addCard','summaryCard','ledgerCard'];
-ids.forEach(id => { const el = $('#'+id); if(el) el.classList.toggle('hidden', !show); });
-}
-function showLogin(show){
-$('#loginCard').classList.toggle('hidden', !show);
-}
-async function tryLoginIfRequired(){
-if (!AUTH_REQUIRED){ showLogin(false); showApp(true); init(); return; }
-if (TOKEN){
-// test with a light call
-const ok = await quickAuthTest();
-if (ok){ showLogin(false); showApp(true); init(); return; }
-TOKEN = null; localStorage.removeItem('hb_token');
-}
-showLogin(true); showApp(false);
-}
-async function quickAuthTest(){
+// ---- Session bootstrap ----
+async function loadSession(){
 try{
-const r = await fetchAuthed('/api/ledger/list', {method:'GET'});
-return r.ok;
-}catch{ return false; }
+const r = await fetchAuthed('/api/session',{cache:'no-store'});
+const j = await r.json();
+SESSION = {authRequired:j.authRequired, mode:j.mode, programScope:j.programScope};
+setScopeBadge(SESSION.programScope);
+if (!SESSION.authRequired){ show($('#loginCard'), false); showApp(true); init(); return; }
+if (TOKEN && SESSION.programScope !== null){
+show($('#loginCard'), false); showApp(true); init(); return;
 }
+// needs login
+show($('#loginCard'), true); showApp(false);
+}catch(e){
+// fallback: show app open
+show($('#loginCard'), false); showApp(true); init();
+}
+}
+
 $('#loginBtn')?.addEventListener('click', async ()=>{
 const pin = ($('#pin')?.value||'').trim();
 $('#loginStatus').textContent = 'Checking…';
@@ -472,8 +563,10 @@ const r = await fetch('/api/login', {method:'POST', headers:{'content-type':'app
 const j = await r.json();
 if (!j.ok){ $('#loginStatus').textContent = 'Invalid PIN'; return; }
 if (j.token){ TOKEN = j.token; localStorage.setItem('hb_token', TOKEN); }
+SESSION = {authRequired:true, mode:j.mode, programScope:j.program||null};
+setScopeBadge(SESSION.programScope);
 $('#loginStatus').textContent = 'Unlocked ✓';
-showLogin(false); showApp(true); init();
+show($('#loginCard'), false); showApp(true); init();
 }catch(e){
 $('#loginStatus').textContent = 'Network error';
 }
@@ -499,7 +592,8 @@ const r = await fetchAuthed('/api/ledger/add', {method:'POST', headers:{'content
 const j = await r.json();
 if (!j.ok){ $('#status').textContent = 'Error: ' + (j.error||('HTTP '+r.status)); return; }
 $('#status').textContent = 'Added ✓';
-$('#amount').value=''; $('#note').value=''; document.querySelector('#amount')?.focus();
+$('#amount').value=''; $('#note').value='';
+$('#amount').focus();
 refreshAll();
 }catch(err){
 $('#status').textContent = 'Network error: ' + (err?.message||String(err));
@@ -522,10 +616,10 @@ try{
 const r = await fetchAuthed('/api/ledger/meta',{cache:'no-store'});
 const j = await r.json();
 if (!j.ok) return;
-// populate program suggestions
 const dl = $('#programList');
+if (!SESSION.programScope && dl){
 dl.innerHTML = (j.programs||[]).map(p=>'<option value="'+p+'"></option>').join('');
-// update CSV link with filters (none by default; user can bookmark filtered link)
+}else if (dl){ dl.innerHTML = ''; }
 updateCsvLink();
 }catch(e){}
 }
@@ -538,8 +632,8 @@ const r = await fetchAuthed('/api/ledger/list', {cache:'no-store'});
 const j = await r.json();
 if (!j.ok){ box.textContent = 'Failed to load: '+(j.error||'unknown'); return; }
 const rows = j.entries || [];
-// mini totals by program
 const miniEl = $('#miniTotals');
+
 if (!rows.length){
 miniEl.innerHTML = '<div class="small">No entries yet.</div>';
 box.textContent = 'No entries yet.';
@@ -559,7 +653,7 @@ mini += '<tr><td>'+k+'</td><td class="right">$'+fmt(a.income)+'</td><td class="r
 mini += '</tbody></table>';
 miniEl.innerHTML = mini;
 }
-// ledger table
+
 let html = '<table><thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Category</th><th>Team</th><th>League</th><th>Program</th><th>Note</th></tr></thead><tbody>';
 for (const e of rows){
 html += '<tr>'+
@@ -640,13 +734,7 @@ $('#summaryBox').textContent = 'Unexpected: '+(err?.message||String(err));
 }
 }
 
-// ---- CSV link with filters (user can tweak query manually if desired) ----
-function updateCsvLink(){
-const qs = new URLSearchParams(); // add your own UI filters later if needed
-$('#csvLink').href = '/api/ledger/export.csv' + (qs.toString()?('?'+qs.toString()):'');
-}
-
-// ---- Charts (Income vs Expense bar) ----
+// ---- Charts ----
 async function drawChart(){
 const days = Math.max(1, Math.min(365, Number($('#rangeChart')?.value||30)));
 const r = await fetchAuthed('/api/ledger/summary?range='+encodeURIComponent(days), {cache:'no-store'});
@@ -660,16 +748,13 @@ const W = c.width = c.clientWidth * devicePixelRatio;
 const H = c.height = c.clientHeight * devicePixelRatio;
 ctx.scale(devicePixelRatio, devicePixelRatio);
 
-// clear
 ctx.fillStyle = '#0d1220'; ctx.fillRect(0,0,c.clientWidth,c.clientHeight);
 ctx.strokeStyle = '#233040'; ctx.strokeRect(0.5,0.5,c.clientWidth-1,c.clientHeight-1);
 
-// axes
 const padding = 36;
 const innerW = c.clientWidth - padding*2;
 const innerH = c.clientHeight - padding*2;
 
-// bars
 const maxV = Math.max(1, income, expense);
 const barW = innerW/4;
 const gap = innerW/2 - barW*2;
@@ -686,7 +771,6 @@ ctx.fillText(label, x+barW/2, padding + innerH + 14);
 ctx.fillText('$'+val.toFixed(2), x+barW/2, y-6);
 }
 
-// grid line
 ctx.strokeStyle = '#1f2733';
 ctx.beginPath(); ctx.moveTo(padding, padding+innerH+0.5); ctx.lineTo(padding+innerW, padding+innerH+0.5); ctx.stroke();
 
@@ -697,15 +781,17 @@ bar(1, expense, 'Expense');
 // ---- init ----
 async function refreshAll(){
 await loadMeta();
+lockProgramIfScoped();
 await loadList();
 await loadSummary();
 await drawChart();
+updateCsvLink();
 }
 function init(){
 $('#date').value = (new Date()).toISOString().slice(0,10);
 refreshAll();
 }
-window.addEventListener('load', tryLoginIfRequired);
+window.addEventListener('load', loadSession);
 </script>
 </body></html>`;
 }
@@ -724,7 +810,9 @@ if (req.method === 'OPTIONS') return send(res,204,{},'');
 if (req.method === 'GET' && u.pathname === '/health') return text(res,200,'OK');
 if (req.method === 'GET' && u.pathname === '/') return send(res,200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}, uiHTML());
 
+if (req.method === 'GET' && u.pathname === '/api/session') return sessionInfo(req,res);
 if (req.method === 'POST' && u.pathname === '/api/login') return login(req,res);
+
 if (req.method === 'GET' && u.pathname === '/api/ledger/meta') return meta(req,res);
 if (req.method === 'POST' && u.pathname === '/api/ledger/add') return handleAdd(req,res);
 if (req.method === 'GET' && u.pathname === '/api/ledger/list') return listEntries(req,res,u);
@@ -740,8 +828,11 @@ return text(res,500,'Server error');
 
 server.listen(PORT, ()=>{
 try{
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, {recursive:true});
 ensureStore();
-console.log('💵 Hey Bori Cash Flow PRO on '+PORT+' | DATA_DIR='+DATA_DIR+' | AUTH='+(COACH_PIN?'ON':'OFF'));
+console.log('💵 Hey Bori Cash Flow — mode='+AUTH_MODE.toUpperCase()+
+(AUTH_MODE==='multi' ? ` | programs=${PIN_MAP.length}` : '')+
+' | PORT='+PORT+' | DATA_DIR='+DATA_DIR);
 }catch(e){
 console.error('Startup store error', e);
 }
