@@ -1,8 +1,8 @@
-// Hey Bori Cash Flow — Baseline (self-healing storage)
+// Hey Bori Cash Flow — Baseline + Program field (self-healing storage)
 // Endpoints:
 // GET /health
 // GET / -> HTML UI (add/list/summary/export)
-// POST /api/ledger/add -> {type:'income'|'expense', amount, category, note?, date?, team?, league?}
+// POST /api/ledger/add -> {type:'income'|'expense', amount, category, note?, date?, team?, league?, program?}
 // GET /api/ledger/list
 // GET /api/ledger/summary -> ?range=30
 // GET /api/ledger/export.csv
@@ -46,7 +46,6 @@ return fresh;
 }
 
 function writeDB(db){
-// guarantee shape before write
 if (!db || typeof db !== 'object') db = {entries:[]};
 if (!Array.isArray(db.entries)) db.entries = [];
 fs.writeFileSync(LEDGER_FN, JSON.stringify(db, null, 2));
@@ -105,12 +104,13 @@ note: (body.note||'').trim(),
 date: clampISODate(body.date),
 team: (body.team||'').trim(),
 league: (body.league||'').trim(),
+program: (body.program||'').trim(), // NEW
 createdAt: Date.now(),
 updatedAt: Date.now()
 };
 
-const db = readDB(); // <- always has entries:[]
-db.entries.unshift(entry); // <- safe now
+const db = readDB(); // guaranteed entries:[]
+db.entries.unshift(entry); // newest first
 writeDB(db);
 return json(res,200,{ok:true, entry});
 }catch(e){
@@ -143,20 +143,30 @@ return isFinite(t) && t >= cutoff;
 });
 
 let income=0, expense=0;
-const byCat = {}, byTL = {};
+const byCat = {}, byTL = {}, byProgram = {}; // NEW
 for (const e of within){
 if (e.type==='income') income += e.amount; else expense += e.amount;
+
 const k = e.category||'(uncategorized)';
-byCat[k] = byCat[k] || {income:0,expense:0}; byCat[k][e.type]+=e.amount;
+byCat[k] = byCat[k] || {income:0,expense:0};
+byCat[k][e.type]+=e.amount;
+
 const tl = (e.team||'-')+' | '+(e.league||'-');
-byTL[tl] = byTL[tl] || {income:0,expense:0}; byTL[tl][e.type]+=e.amount;
+byTL[tl] = byTL[tl] || {income:0,expense:0};
+byTL[tl][e.type]+=e.amount;
+
+const prog = e.program||'(no program)';
+byProgram[prog] = byProgram[prog] || {income:0,expense:0};
+byProgram[prog][e.type]+=e.amount;
 }
 const net = Number((income - expense).toFixed(2));
 return json(res,200,{
 ok:true,
 rangeDays:days,
 totals:{income:+income.toFixed(2), expense:+expense.toFixed(2), net},
-byCategory:byCat, byTeamLeague:byTL,
+byCategory:byCat,
+byTeamLeague:byTL,
+byProgram, // NEW
 count:within.length
 });
 }catch(e){
@@ -168,13 +178,13 @@ function exportCSV(req, res){
 try{
 const db = readDB();
 const rows = [
-['id','date','type','amount','category','note','team','league','createdAt','updatedAt'].map(csvEsc).join(',')
+['id','date','type','amount','category','note','team','league','program','createdAt','updatedAt'].map(csvEsc).join(',') // NEW header
 ];
 for (const e of (db.entries||[])){
 rows.push([
 e.id, e.date, e.type, String(e.amount),
 e.category||'', e.note||'',
-e.team||'', e.league||'',
+e.team||'', e.league||'', e.program||'', // NEW column
 String(e.createdAt||''), String(e.updatedAt||'')
 ].map(csvEsc).join(','));
 }
@@ -270,6 +280,10 @@ a{color:#80bfff}
 <label>League (optional)</label>
 <input id="league" placeholder="e.g., LBJP"/>
 </div>
+<div class="col">
+<label>Program (optional)</label>
+<input id="program" placeholder="e.g., Summer League 2025"/>
+</div>
 </div>
 <label>Note (optional)</label>
 <textarea id="note" rows="2" placeholder="e.g., 3 jerseys @ $20"></textarea>
@@ -312,7 +326,8 @@ category: $('#category').value,
 note: $('#note').value.trim(),
 date: $('#date').value || null,
 team: $('#team').value.trim(),
-league: $('#league').value.trim()
+league: $('#league').value.trim(),
+program: $('#program').value.trim() // NEW
 };
 $('#status').textContent = 'Adding…';
 try{
@@ -336,7 +351,7 @@ const j = await r.json();
 if (!j.ok){ box.textContent = 'Failed to load: '+(j.error||'unknown'); return; }
 const rows = j.entries || [];
 if (!rows.length){ box.textContent = 'No entries yet.'; return; }
-let html = '<table><thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Category</th><th>Team</th><th>League</th><th>Note</th></tr></thead><tbody>';
+let html = '<table><thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Category</th><th>Team</th><th>League</th><th>Program</th><th>Note</th></tr></thead><tbody>';
 for (const e of rows){
 html += '<tr>'+
 '<td>'+ (e.date||'') +'</td>'+
@@ -345,6 +360,7 @@ html += '<tr>'+
 '<td>'+ (e.category||'') +'</td>'+
 '<td>'+ (e.team||'') +'</td>'+
 '<td>'+ (e.league||'') +'</td>'+
+'<td>'+ (e.program||'') +'</td>'+
 '<td>'+ (e.note||'') +'</td>'+
 '</tr>';
 }
@@ -370,6 +386,7 @@ let html = '<div><b>Totals</b> — Income: $'+fmt(t.income)+' · Expense: $'+fmt
 
 const byCat = j.byCategory || {};
 const byTL = j.byTeamLeague || {};
+const byProgram = j.byProgram || {}; // NEW
 
 html += '<div style="height:10px"></div><div><b>By Category</b></div>';
 if (Object.keys(byCat).length===0){
@@ -390,6 +407,18 @@ html += '<div class="small">none</div>';
 html += '<table><thead><tr><th>Team | League</th><th class="right">Income</th><th class="right">Expense</th></tr></thead><tbody>';
 for (const k of Object.keys(byTL)){
 const row = byTL[k] || {};
+html += '<tr><td>'+k+'</td><td class="right">$'+fmt(row.income||0)+'</td><td class="right">$'+fmt(row.expense||0)+'</td></tr>';
+}
+html += '</tbody></table>';
+}
+
+html += '<div style="height:10px"></div><div><b>By Program</b></div>'; // NEW
+if (Object.keys(byProgram).length===0){
+html += '<div class="small">none</div>';
+}else{
+html += '<table><thead><tr><th>Program</th><th class="right">Income</th><th class="right">Expense</th></tr></thead><tbody>';
+for (const k of Object.keys(byProgram)){
+const row = byProgram[k] || {};
 html += '<tr><td>'+k+'</td><td class="right">$'+fmt(row.income||0)+'</td><td class="right">$'+fmt(row.expense||0)+'</td></tr>';
 }
 html += '</tbody></table>';
@@ -447,7 +476,7 @@ return text(res,500,'Server error');
 server.listen(PORT, ()=>{
 try{
 ensureStore();
-console.log('💵 Hey Bori Cash Flow baseline on '+PORT+' | DATA_DIR='+DATA_DIR);
+console.log('💵 Hey Bori Cash Flow (Program-enabled) on '+PORT+' | DATA_DIR='+DATA_DIR);
 }catch(e){
 console.error('Startup store error', e);
 }
