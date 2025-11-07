@@ -1,11 +1,22 @@
-// Hey Bori Cash Flow — Baseline + Program field (self-healing storage)
+// Hey Bori Cash Flow — Pro (Programs + Auth + Filters + Charts)
+// Features:
+// 1) Program auto-suggest from history
+// 2) Per-Program mini totals in Ledger
+// 3) Filtered CSV export (?from,to,team,league,program)
+// 4) Simple auth (PIN) via COACH_PIN env
+// 5) Charts (Income vs Expense) — pure Canvas, no deps
+//
 // Endpoints:
 // GET /health
-// GET / -> HTML UI (add/list/summary/export)
-// POST /api/ledger/add -> {type:'income'|'expense', amount, category, note?, date?, team?, league?, program?}
+// GET / -> HTML UI (login if COACH_PIN set)
+// POST /api/login -> {pin} -> {ok, token}
+// GET /api/ledger/meta -> {teams[], leagues[], categories[], programs[]}
+// POST /api/ledger/add -> {...}
 // GET /api/ledger/list
-// GET /api/ledger/summary -> ?range=30
-// GET /api/ledger/export.csv
+// GET /api/ledger/summary?range=30
+// GET /api/ledger/export.csv?from=&to=&team=&league=&program=
+//
+// Render: Build=true, Start=node server.js, Env: DATA_DIR=/data (+ Disk), optional COACH_PIN
 
 process.on('uncaughtException', e => console.error('[uncaughtException]', e));
 process.on('unhandledRejection', e => console.error('[unhandledRejection]', e));
@@ -17,8 +28,19 @@ const path = require('path');
 const crypto = require('crypto');
 
 const PORT = Number(process.env.PORT || 10000);
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data'); // Render: mount Disk at /data
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const LEDGER_FN = path.join(DATA_DIR, 'ledger.json');
+const COACH_PIN = process.env.COACH_PIN || ''; // optional simple auth
+
+// ---------- auth helpers ----------
+function pinHash(pin){ return crypto.createHash('sha256').update(String(pin)).digest('hex'); }
+const EXPECTED_HASH = COACH_PIN ? pinHash(COACH_PIN) : null;
+
+function authOk(req){
+if (!EXPECTED_HASH) return true;
+const token = String(req.headers['x-auth'] || '').trim();
+return token && token === EXPECTED_HASH;
+}
 
 // ---------- storage (self-healing) ----------
 function ensureStore(){
@@ -27,8 +49,6 @@ if (!fs.existsSync(LEDGER_FN)){
 fs.writeFileSync(LEDGER_FN, JSON.stringify({entries:[]}, null, 2));
 }
 }
-
-// Always return an object with .entries = []
 function readDB(){
 ensureStore();
 try{
@@ -40,18 +60,17 @@ return data;
 }catch(e){
 console.error('[readDB] repair ledger.json:', e.message);
 const fresh = {entries:[]};
-try{ fs.writeFileSync(LEDGER_FN, JSON.stringify(fresh,null,2)); }catch(_) {}
+try{ fs.writeFileSync(LEDGER_FN, JSON.stringify(fresh,null,2)); }catch(_){}
 return fresh;
 }
 }
-
 function writeDB(db){
 if (!db || typeof db !== 'object') db = {entries:[]};
 if (!Array.isArray(db.entries)) db.entries = [];
 fs.writeFileSync(LEDGER_FN, JSON.stringify(db, null, 2));
 }
 
-// ---------- helpers ----------
+// ---------- utils ----------
 function send(res, code, headers, body){ res.writeHead(code, headers); res.end(body); }
 function text(res, code, s){ send(res, code, {'Content-Type':'text/plain; charset=utf-8','Cache-Control':'no-store'}, String(s)); }
 function json(res, code, obj){ send(res, code, {'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}, JSON.stringify(obj)); }
@@ -76,15 +95,47 @@ try{ return resolve(b?JSON.parse(b):{}); }catch{ return resolve({}); }
 });
 });
 }
-
 function uuid(){ return crypto.randomUUID ? crypto.randomUUID() : (Date.now().toString(36)+Math.random().toString(36).slice(2)); }
 function toNumber(x){ const n = Number(x); return isFinite(n) ? n : NaN; }
 function todayISO(){ return new Date().toISOString().slice(0,10); }
 function clampISODate(s){ return (/^\d{4}-\d{2}-\d{2}$/.test(String(s||''))) ? s : todayISO(); }
 function csvEsc(s){ s=(s==null?'':String(s)); return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s; }
 
+function applyFilters(rows, q){
+let r = rows;
+const from = q.get('from'), to = q.get('to');
+const team = (q.get('team')||'').trim();
+const league = (q.get('league')||'').trim();
+const program = (q.get('program')||'').trim();
+
+if (team) r = r.filter(e => (e.team||'')===team);
+if (league) r = r.filter(e => (e.league||'')===league);
+if (program)r = r.filter(e => (e.program||'')===program);
+
+if (from || to){
+const fromT = from ? new Date(from).getTime() : -Infinity;
+const toT = to ? new Date(to).getTime()+86400000-1 : +Infinity;
+r = r.filter(e=>{
+const t = new Date(e.date||todayISO()).getTime();
+return isFinite(t) && t>=fromT && t<=toT;
+});
+}
+return r;
+}
+
 // ---------- API ----------
+async function login(req, res){
+if (!EXPECTED_HASH) return json(res,200,{ok:true, token:null, message:'Auth not required'});
+const body = await parseBody(req);
+const pin = String(body.pin||'');
+if (!pin) return json(res,400,{ok:false,error:'pin required'});
+const token = pinHash(pin);
+if (token !== EXPECTED_HASH) return json(res,403,{ok:false,error:'invalid pin'});
+return json(res,200,{ok:true, token});
+}
+
 async function handleAdd(req, res){
+if (!authOk(req)) return json(res,401,{ok:false,error:'auth required'});
 try{
 const body = await parseBody(req);
 if (body.__parseError) return json(res,400,{ok:false,error:body.__parseError});
@@ -104,13 +155,13 @@ note: (body.note||'').trim(),
 date: clampISODate(body.date),
 team: (body.team||'').trim(),
 league: (body.league||'').trim(),
-program: (body.program||'').trim(), // NEW
+program: (body.program||'').trim(),
 createdAt: Date.now(),
 updatedAt: Date.now()
 };
 
-const db = readDB(); // guaranteed entries:[]
-db.entries.unshift(entry); // newest first
+const db = readDB();
+db.entries.unshift(entry);
 writeDB(db);
 return json(res,200,{ok:true, entry});
 }catch(e){
@@ -119,10 +170,35 @@ return json(res,500,{ok:false,error:'server add error: '+(e.message||e)});
 }
 }
 
-function listEntries(req, res){
+function meta(req, res){
+if (!authOk(req)) return json(res,401,{ok:false,error:'auth required'});
 try{
 const db = readDB();
-const out = [...(db.entries||[])].sort((a,b)=>{
+const teams = new Set(), leagues = new Set(), cats = new Set(), progs = new Set();
+for (const e of (db.entries||[])){
+if (e.team) teams.add(e.team);
+if (e.league) leagues.add(e.league);
+if (e.category) cats.add(e.category);
+if (e.program) progs.add(e.program);
+}
+return json(res,200,{ok:true,
+teams:[...teams].sort((a,b)=>a.localeCompare(b)),
+leagues:[...leagues].sort((a,b)=>a.localeCompare(b)),
+categories:[...cats].sort((a,b)=>a.localeCompare(b)),
+programs:[...progs].sort((a,b)=>a.localeCompare(b))
+});
+}catch(e){
+return json(res,500,{ok:false,error:'server meta error: '+(e.message||e)});
+}
+}
+
+function listEntries(req, res, u){
+if (!authOk(req)) return json(res,401,{ok:false,error:'auth required'});
+try{
+const db = readDB();
+let out = [...(db.entries||[])];
+out = applyFilters(out, u.searchParams);
+out.sort((a,b)=>{
 const d = String(b.date||'').localeCompare(String(a.date||''));
 return d || ((b.createdAt||0) - (a.createdAt||0));
 });
@@ -133,6 +209,7 @@ return json(res,500,{ok:false,error:'server list error: '+(e.message||e)});
 }
 
 function summarize(req, res, u){
+if (!authOk(req)) return json(res,401,{ok:false,error:'auth required'});
 try{
 const days = Math.max(1, Math.min(365, Number(u.searchParams.get('range') || 30)));
 const cutoff = Date.now() - days*24*60*60*1000;
@@ -143,21 +220,18 @@ return isFinite(t) && t >= cutoff;
 });
 
 let income=0, expense=0;
-const byCat = {}, byTL = {}, byProgram = {}; // NEW
+const byCat = {}, byTL = {}, byProgram = {};
 for (const e of within){
 if (e.type==='income') income += e.amount; else expense += e.amount;
 
 const k = e.category||'(uncategorized)';
-byCat[k] = byCat[k] || {income:0,expense:0};
-byCat[k][e.type]+=e.amount;
+byCat[k] = byCat[k] || {income:0,expense:0}; byCat[k][e.type]+=e.amount;
 
 const tl = (e.team||'-')+' | '+(e.league||'-');
-byTL[tl] = byTL[tl] || {income:0,expense:0};
-byTL[tl][e.type]+=e.amount;
+byTL[tl] = byTL[tl] || {income:0,expense:0}; byTL[tl][e.type]+=e.amount;
 
 const prog = e.program||'(no program)';
-byProgram[prog] = byProgram[prog] || {income:0,expense:0};
-byProgram[prog][e.type]+=e.amount;
+byProgram[prog] = byProgram[prog] || {income:0,expense:0}; byProgram[prog][e.type]+=e.amount;
 }
 const net = Number((income - expense).toFixed(2));
 return json(res,200,{
@@ -166,7 +240,7 @@ rangeDays:days,
 totals:{income:+income.toFixed(2), expense:+expense.toFixed(2), net},
 byCategory:byCat,
 byTeamLeague:byTL,
-byProgram, // NEW
+byProgram,
 count:within.length
 });
 }catch(e){
@@ -174,21 +248,24 @@ return json(res,500,{ok:false,error:'server summary error: '+(e.message||e)});
 }
 }
 
-function exportCSV(req, res){
+function exportCSV(req, res, u){
+if (!authOk(req)) return text(res,401,'auth required');
 try{
 const db = readDB();
-const rows = [
-['id','date','type','amount','category','note','team','league','program','createdAt','updatedAt'].map(csvEsc).join(',') // NEW header
+let rows = [...(db.entries||[])];
+rows = applyFilters(rows, u.searchParams);
+const out = [
+['id','date','type','amount','category','note','team','league','program','createdAt','updatedAt'].map(csvEsc).join(',')
 ];
-for (const e of (db.entries||[])){
-rows.push([
+for (const e of rows){
+out.push([
 e.id, e.date, e.type, String(e.amount),
 e.category||'', e.note||'',
-e.team||'', e.league||'', e.program||'', // NEW column
+e.team||'', e.league||'', e.program||'',
 String(e.createdAt||''), String(e.updatedAt||'')
 ].map(csvEsc).join(','));
 }
-const csv = rows.join('\n');
+const csv = out.join('\n');
 send(res,200,{
 'Content-Type':'text/csv; charset=utf-8',
 'Content-Disposition':'attachment; filename="hey-bori-cashflow.csv"',
@@ -201,6 +278,7 @@ return text(res,500,'CSV error: '+(e.message||e));
 
 // ---------- UI ----------
 function uiHTML(){
+// If COACH_PIN is set, UI will show a login card and attach X-Auth on all fetches.
 return `<!doctype html>
 <html lang="en">
 <head>
@@ -210,28 +288,31 @@ return `<!doctype html>
 <style>
 :root{
 --bg:#0e1116; --card:#151a22; --line:#1f2733; --text:#e8edf4; --muted:#a7b1c2;
---accent:#2dd4bf; --accent2:#60a5fa;
+--accent:#2dd4bf; --accent2:#60a5fa; --danger:#f87171;
 }
 *{box-sizing:border-box}
 body{margin:0;background:linear-gradient(180deg,#0b0f14,#0e1116);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Inter,Roboto,Arial,sans-serif}
 header{padding:16px;border-bottom:1px solid var(--line);background:#0c1016;position:sticky;top:0;z-index:10}
 h1{margin:0;font-size:20px}
 .sub{color:var(--muted);font-size:12px;margin-top:4px}
-main{max-width:880px;margin:16px auto;padding:0 12px 80px}
+main{max-width:980px;margin:16px auto;padding:0 12px 100px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin:12px 0}
 label{display:block;font-size:12px;color:var(--muted);margin:6px 0 4px}
 input,select,button,textarea{width:100%;font-size:15px;border-radius:10px;border:1px solid #233040;background:#0d1220;color:var(--text);padding:10px 12px;outline:none}
 input:focus,select:focus,textarea:focus{border-color:#35507a}
 button{cursor:pointer}
 .row{display:flex;gap:8px;flex-wrap:wrap}
-.col{flex:1;min-width:140px}
+.col{flex:1;min-width:160px}
 .primary{background:linear-gradient(90deg,var(--accent),var(--accent2));border:none;color:#071318;font-weight:700}
+.danger{background:#2b0f12;border:1px solid #71212a;color:#ffd3d6}
 table{width:100%;border-collapse:collapse;margin-top:8px}
 th,td{border-bottom:1px solid var(--line);padding:8px 6px;font-size:13px;text-align:left;vertical-align:top}
 th{color:#c8d3e6;font-weight:600}
 .right{text-align:right}
 .small{font-size:12px;color:var(--muted)}
 a{color:#80bfff}
+canvas{width:100%;max-width:680px;height:280px;background:#0d1220;border:1px solid #233040;border-radius:10px}
+.hidden{display:none}
 </style>
 </head>
 <body>
@@ -239,8 +320,36 @@ a{color:#80bfff}
 <h1>Hey Bori Cash Flow</h1>
 <div class="sub">Simple • Fast • For youth teams & leagues</div>
 </header>
+
 <main>
-<section class="card">
+<!-- Login Card (shown only if server requires PIN) -->
+<section id="loginCard" class="card hidden">
+<h3 style="margin:0 0 8px 0">Coach Login</h3>
+<label>PIN</label>
+<input id="pin" type="password" placeholder="Enter PIN"/>
+<div class="row" style="margin-top:10px">
+<div class="col"><button id="loginBtn" class="primary">Unlock</button></div>
+<div class="col"><span id="loginStatus" class="small"></span></div>
+</div>
+</section>
+
+<!-- Charts -->
+<section id="chartsCard" class="card hidden">
+<h3 style="margin:0 0 8px 0">Dashboard</h3>
+<div class="row">
+<div class="col">
+<label>Range (days)</label>
+<input id="rangeChart" type="number" min="1" max="365" value="30"/>
+</div>
+<div class="col" style="align-self:end">
+<button id="chartRefresh">Refresh</button>
+</div>
+</div>
+<canvas id="chart"></canvas>
+</section>
+
+<!-- Add Entry -->
+<section id="addCard" class="card hidden">
 <div class="row">
 <div class="col">
 <label>Type</label>
@@ -282,19 +391,23 @@ a{color:#80bfff}
 </div>
 <div class="col">
 <label>Program (optional)</label>
-<input id="program" placeholder="e.g., Summer League 2025"/>
+<input id="program" list="programList" placeholder="e.g., Summer League 2025"/>
+<datalist id="programList"></datalist>
 </div>
 </div>
 <label>Note (optional)</label>
 <textarea id="note" rows="2" placeholder="e.g., 3 jerseys @ $20"></textarea>
 <div class="row" style="margin-top:10px">
 <div class="col"><button class="primary" id="addBtn">Add Entry</button></div>
-<div class="col"><a class="small" href="/api/ledger/export.csv">Download CSV</a></div>
+<div class="col">
+<a id="csvLink" class="small" href="/api/ledger/export.csv">Download CSV</a>
+</div>
 <div class="col"><span class="small" id="status"></span></div>
 </div>
 </section>
 
-<section class="card">
+<!-- Summary -->
+<section id="summaryCard" class="card hidden">
 <h3 style="margin:0 0 8px 0">Summary (Last <span id="rangeSpan">30</span> days)</h3>
 <div class="row">
 <div class="col">
@@ -308,14 +421,65 @@ a{color:#80bfff}
 <div id="summaryBox" class="small" style="margin-top:8px">Loading…</div>
 </section>
 
-<section class="card">
+<!-- Ledger + Per-Program mini totals -->
+<section id="ledgerCard" class="card hidden">
 <h3 style="margin:0 0 8px 0">Ledger</h3>
-<div id="tableBox" style="margin-top:8px">Loading…</div>
+<div id="miniTotals" class="small" style="margin-bottom:8px"></div>
+<div id="tableBox">Loading…</div>
 </section>
 </main>
 
 <script>
 const $ = sel => document.querySelector(sel);
+let TOKEN = localStorage.getItem('hb_token') || null;
+const AUTH_REQUIRED = ${EXPECTED_HASH ? 'true' : 'false'};
+
+function authHeaders(h={}){ if (TOKEN) h['x-auth'] = TOKEN; return h; }
+async function fetchAuthed(url, opts={}){
+opts.headers = authHeaders(opts.headers || {});
+return fetch(url, opts);
+}
+
+// ---- Login flow ----
+function showApp(show){
+const ids = ['chartsCard','addCard','summaryCard','ledgerCard'];
+ids.forEach(id => { const el = $('#'+id); if(el) el.classList.toggle('hidden', !show); });
+}
+function showLogin(show){
+$('#loginCard').classList.toggle('hidden', !show);
+}
+async function tryLoginIfRequired(){
+if (!AUTH_REQUIRED){ showLogin(false); showApp(true); init(); return; }
+if (TOKEN){
+// test with a light call
+const ok = await quickAuthTest();
+if (ok){ showLogin(false); showApp(true); init(); return; }
+TOKEN = null; localStorage.removeItem('hb_token');
+}
+showLogin(true); showApp(false);
+}
+async function quickAuthTest(){
+try{
+const r = await fetchAuthed('/api/ledger/list', {method:'GET'});
+return r.ok;
+}catch{ return false; }
+}
+$('#loginBtn')?.addEventListener('click', async ()=>{
+const pin = ($('#pin')?.value||'').trim();
+$('#loginStatus').textContent = 'Checking…';
+try{
+const r = await fetch('/api/login', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({pin})});
+const j = await r.json();
+if (!j.ok){ $('#loginStatus').textContent = 'Invalid PIN'; return; }
+if (j.token){ TOKEN = j.token; localStorage.setItem('hb_token', TOKEN); }
+$('#loginStatus').textContent = 'Unlocked ✓';
+showLogin(false); showApp(true); init();
+}catch(e){
+$('#loginStatus').textContent = 'Network error';
+}
+});
+
+// ---- Add Entry ----
 function fmt(n){ return (Number(n)||0).toFixed(2); }
 
 async function addEntry(){
@@ -327,30 +491,75 @@ note: $('#note').value.trim(),
 date: $('#date').value || null,
 team: $('#team').value.trim(),
 league: $('#league').value.trim(),
-program: $('#program').value.trim() // NEW
+program: $('#program').value.trim()
 };
 $('#status').textContent = 'Adding…';
 try{
-const r = await fetch('/api/ledger/add', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify(body)});
-const txt = await r.text(); let j;
-try{ j = JSON.parse(txt); }catch{ j = {ok:false,error:'non-JSON response', raw:txt}; }
+const r = await fetchAuthed('/api/ledger/add', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify(body)});
+const j = await r.json();
 if (!j.ok){ $('#status').textContent = 'Error: ' + (j.error||('HTTP '+r.status)); return; }
 $('#status').textContent = 'Added ✓';
 $('#amount').value=''; $('#note').value=''; document.querySelector('#amount')?.focus();
-loadList(); loadSummary();
+refreshAll();
 }catch(err){
 $('#status').textContent = 'Network error: ' + (err?.message||String(err));
 }
 }
+document.addEventListener('click', (e)=>{
+if (e.target && e.target.id==='addBtn') addEntry();
+if (e.target && e.target.id==='sumBtn') loadSummary();
+if (e.target && e.target.id==='chartRefresh') drawChart();
+});
+document.addEventListener('keydown', (e)=>{
+if (e.key==='Enter' && document.activeElement && document.activeElement.tagName!=='TEXTAREA'){
+e.preventDefault(); addEntry();
+}
+});
 
+// ---- Meta & Program autosuggest ----
+async function loadMeta(){
+try{
+const r = await fetchAuthed('/api/ledger/meta',{cache:'no-store'});
+const j = await r.json();
+if (!j.ok) return;
+// populate program suggestions
+const dl = $('#programList');
+dl.innerHTML = (j.programs||[]).map(p=>'<option value="'+p+'"></option>').join('');
+// update CSV link with filters (none by default; user can bookmark filtered link)
+updateCsvLink();
+}catch(e){}
+}
+
+// ---- Ledger + mini totals ----
 async function loadList(){
 const box = $('#tableBox'); box.textContent = 'Loading…';
 try{
-const r = await fetch('/api/ledger/list', {cache:'no-store'});
+const r = await fetchAuthed('/api/ledger/list', {cache:'no-store'});
 const j = await r.json();
 if (!j.ok){ box.textContent = 'Failed to load: '+(j.error||'unknown'); return; }
 const rows = j.entries || [];
-if (!rows.length){ box.textContent = 'No entries yet.'; return; }
+// mini totals by program
+const miniEl = $('#miniTotals');
+if (!rows.length){
+miniEl.innerHTML = '<div class="small">No entries yet.</div>';
+box.textContent = 'No entries yet.';
+return;
+} else {
+const agg = {};
+for (const e of rows){
+const k = e.program||'(no program)';
+agg[k] = agg[k] || {income:0,expense:0};
+agg[k][e.type]+= (e.amount||0);
+}
+let mini = '<div><b>Per-Program totals</b></div><table><thead><tr><th>Program</th><th class="right">Income</th><th class="right">Expense</th><th class="right">Net</th></tr></thead><tbody>';
+for (const k of Object.keys(agg)){
+const a = agg[k]; const net = (a.income - a.expense);
+mini += '<tr><td>'+k+'</td><td class="right">$'+fmt(a.income)+'</td><td class="right">$'+fmt(a.expense)+'</td><td class="right">$'+fmt(net)+'</td></tr>';
+}
+mini += '</tbody></table>';
+miniEl.innerHTML = mini;
+}
+// ledger table
 let html = '<table><thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Category</th><th>Team</th><th>League</th><th>Program</th><th>Note</th></tr></thead><tbody>';
 for (const e of rows){
 html += '<tr>'+
@@ -371,13 +580,14 @@ box.textContent = 'Network error: '+(e?.message||String(e));
 }
 }
 
+// ---- Summary ----
 async function loadSummary(){
 try{
 const days = Math.max(1, Math.min(365, Number($('#range')?.value||30)));
 $('#rangeSpan').textContent = String(days);
 $('#summaryBox').textContent = 'Loading…';
 
-const resp = await fetch('/api/ledger/summary?range='+encodeURIComponent(days), {cache:'no-store'});
+const resp = await fetchAuthed('/api/ledger/summary?range='+encodeURIComponent(days), {cache:'no-store'});
 if (!resp.ok){ $('#summaryBox').textContent = 'HTTP '+resp.status; return; }
 const j = await resp.json(); if (!j.ok){ $('#summaryBox').textContent = 'Error: '+(j.error||'summary'); return; }
 
@@ -386,7 +596,7 @@ let html = '<div><b>Totals</b> — Income: $'+fmt(t.income)+' · Expense: $'+fmt
 
 const byCat = j.byCategory || {};
 const byTL = j.byTeamLeague || {};
-const byProgram = j.byProgram || {}; // NEW
+const byProgram = j.byProgram || {};
 
 html += '<div style="height:10px"></div><div><b>By Category</b></div>';
 if (Object.keys(byCat).length===0){
@@ -412,7 +622,7 @@ html += '<tr><td>'+k+'</td><td class="right">$'+fmt(row.income||0)+'</td><td cla
 html += '</tbody></table>';
 }
 
-html += '<div style="height:10px"></div><div><b>By Program</b></div>'; // NEW
+html += '<div style="height:10px"></div><div><b>By Program</b></div>';
 if (Object.keys(byProgram).length===0){
 html += '<div class="small">none</div>';
 }else{
@@ -430,19 +640,72 @@ $('#summaryBox').textContent = 'Unexpected: '+(err?.message||String(err));
 }
 }
 
-document.addEventListener('click', (e)=>{
-if (e.target && e.target.id==='addBtn') addEntry();
-if (e.target && e.target.id==='sumBtn') loadSummary();
-});
-document.addEventListener('keydown', (e)=>{
-if (e.key==='Enter' && document.activeElement && document.activeElement.tagName!=='TEXTAREA'){
-e.preventDefault(); addEntry();
+// ---- CSV link with filters (user can tweak query manually if desired) ----
+function updateCsvLink(){
+const qs = new URLSearchParams(); // add your own UI filters later if needed
+$('#csvLink').href = '/api/ledger/export.csv' + (qs.toString()?('?'+qs.toString()):'');
 }
-});
-window.addEventListener('load', ()=>{
+
+// ---- Charts (Income vs Expense bar) ----
+async function drawChart(){
+const days = Math.max(1, Math.min(365, Number($('#rangeChart')?.value||30)));
+const r = await fetchAuthed('/api/ledger/summary?range='+encodeURIComponent(days), {cache:'no-store'});
+if (!r.ok) return;
+const j = await r.json();
+const income = j.totals?.income || 0;
+const expense = j.totals?.expense || 0;
+
+const c = $('#chart'); const ctx = c.getContext('2d');
+const W = c.width = c.clientWidth * devicePixelRatio;
+const H = c.height = c.clientHeight * devicePixelRatio;
+ctx.scale(devicePixelRatio, devicePixelRatio);
+
+// clear
+ctx.fillStyle = '#0d1220'; ctx.fillRect(0,0,c.clientWidth,c.clientHeight);
+ctx.strokeStyle = '#233040'; ctx.strokeRect(0.5,0.5,c.clientWidth-1,c.clientHeight-1);
+
+// axes
+const padding = 36;
+const innerW = c.clientWidth - padding*2;
+const innerH = c.clientHeight - padding*2;
+
+// bars
+const maxV = Math.max(1, income, expense);
+const barW = innerW/4;
+const gap = innerW/2 - barW*2;
+
+function bar(xIndex, val, label){
+const x = padding + (xIndex===0 ? barW*0.5 : barW*1.5 + gap);
+const h = Math.round((val/maxV)*innerH);
+const y = padding + innerH - h;
+ctx.fillStyle = xIndex===0 ? '#2dd4bf' : '#60a5fa';
+ctx.fillRect(x, y, barW, h);
+ctx.fillStyle = '#c8d3e6';
+ctx.textAlign = 'center'; ctx.font = '12px system-ui';
+ctx.fillText(label, x+barW/2, padding + innerH + 14);
+ctx.fillText('$'+val.toFixed(2), x+barW/2, y-6);
+}
+
+// grid line
+ctx.strokeStyle = '#1f2733';
+ctx.beginPath(); ctx.moveTo(padding, padding+innerH+0.5); ctx.lineTo(padding+innerW, padding+innerH+0.5); ctx.stroke();
+
+bar(0, income, 'Income');
+bar(1, expense, 'Expense');
+}
+
+// ---- init ----
+async function refreshAll(){
+await loadMeta();
+await loadList();
+await loadSummary();
+await drawChart();
+}
+function init(){
 $('#date').value = (new Date()).toISOString().slice(0,10);
-loadList(); loadSummary();
-});
+refreshAll();
+}
+window.addEventListener('load', tryLoginIfRequired);
 </script>
 </body></html>`;
 }
@@ -452,19 +715,21 @@ const server = http.createServer(async (req, res) => {
 try{
 const u = new URL(req.url, 'http://' + (req.headers.host || 'localhost'));
 
-// allow same-origin / simple embedding
+// CORS (relaxed)
 res.setHeader('Access-Control-Allow-Origin', '*');
 res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Auth');
 if (req.method === 'OPTIONS') return send(res,204,{},'');
 
 if (req.method === 'GET' && u.pathname === '/health') return text(res,200,'OK');
 if (req.method === 'GET' && u.pathname === '/') return send(res,200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}, uiHTML());
 
+if (req.method === 'POST' && u.pathname === '/api/login') return login(req,res);
+if (req.method === 'GET' && u.pathname === '/api/ledger/meta') return meta(req,res);
 if (req.method === 'POST' && u.pathname === '/api/ledger/add') return handleAdd(req,res);
-if (req.method === 'GET' && u.pathname === '/api/ledger/list') return listEntries(req,res);
+if (req.method === 'GET' && u.pathname === '/api/ledger/list') return listEntries(req,res,u);
 if (req.method === 'GET' && u.pathname === '/api/ledger/summary') return summarize(req,res,u);
-if (req.method === 'GET' && u.pathname === '/api/ledger/export.csv') return exportCSV(req,res);
+if (req.method === 'GET' && u.pathname === '/api/ledger/export.csv') return exportCSV(req,res,u);
 
 return text(res,404,'Not Found');
 }catch(e){
@@ -476,7 +741,7 @@ return text(res,500,'Server error');
 server.listen(PORT, ()=>{
 try{
 ensureStore();
-console.log('💵 Hey Bori Cash Flow (Program-enabled) on '+PORT+' | DATA_DIR='+DATA_DIR);
+console.log('💵 Hey Bori Cash Flow PRO on '+PORT+' | DATA_DIR='+DATA_DIR+' | AUTH='+(COACH_PIN?'ON':'OFF'));
 }catch(e){
 console.error('Startup store error', e);
 }
