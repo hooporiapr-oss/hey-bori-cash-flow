@@ -1,5 +1,5 @@
-// server.js — Hey Bori Cash Flow™ (multi-league/team/tournament + PRESET DROPDOWNS)
-// Zero dependencies. Render-ready. Works with ledger.js.
+// server.js — Hey Bori Cash Flow™ (chip-style multi-dropdown filters; no inner scroll)
+// Zero deps. Render-ready. Works with ledger.js.
 //
 // ENV:
 // PORT (injected by Render)
@@ -32,7 +32,7 @@ function html(res, s){ send(res, 200, {'Content-Type':'text/html; charset=utf-8'
 function json(res, code, obj){ send(res, code, {'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','Content-Security-Policy':CSP_VALUE}, JSON.stringify(obj)); }
 function text(res, code, s){ send(res, code, {'Content-Type':'text/plain; charset=utf-8','Cache-Control':'no-store','Content-Security-Policy':CSP_VALUE}, String(s)); }
 
-// Optional: redirect *.onrender.com → FORCE_DOMAIN
+// Optional redirect *.onrender.com → custom domain
 function maybeRedirectToCustomDomain(req, res, u){
 if (!FORCE_DOMAIN) return false;
 const host = (u.host||'').toLowerCase();
@@ -63,26 +63,48 @@ h1{margin:0;font:800 18px/1.2 system-ui}
 .sub{margin:2px 0 0 0;font:700 12px/1.4 system-ui;opacity:.95}
 main{padding:12px 14px;display:grid;gap:12px}
 .card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:12px}
-label{font:700 12px system-ui;display:block;margin-bottom:6px;color:#223}
+label{font:800 12px system-ui;display:block;margin:10px 0 6px;color:#1a2a44}
 .row{display:flex;gap:8px;flex-wrap:wrap}
-input,select{padding:10px;border:1px solid #ddd;border-radius:10px;font:600 14px system-ui}
-select[multiple]{min-height:120px}
-button.primary{background:#0a3a78;color:#fff;border:1px solid #0c2a55;border-radius:10px;padding:10px 14px;font:800 14px system-ui;cursor:pointer}
+input,select,button{font:600 14px system-ui}
+input,select{padding:10px;border:1px solid #ddd;border-radius:10px}
+button.primary{background:#0a3a78;color:#fff;border:1px solid #0c2a55;border-radius:10px;padding:10px 14px;font:800 14px;cursor:pointer}
 button{cursor:pointer}
 .table{width:100%;border-collapse:collapse}
-.table th,.table td{border-bottom:1px solid #eee;padding:8px 6px;text-align:left;font:600 13px system-ui}
+.table th,.table td{border-bottom:1px solid #eee;padding:8px 6px;text-align:left;font:600 13px}
 .kpis{display:flex;gap:10px;flex-wrap:wrap}
 .kpi{flex:1 1 120px;background:#fff;border:1px solid var(--border);border-radius:12px;padding:12px}
-.kpi h3{margin:0 0 6px 0;font:800 12px system-ui;color:#334}
-.kpi .val{font:800 18px system-ui}
+.kpi h3{margin:0 0 6px 0;font:800 12px;color:#334}
+.kpi .val{font:800 18px}
 footer{padding:14px 16px;color:#fff;opacity:.92}
-.small{font:600 12px/1.4 system-ui}
+.small{font:600 12px/1.4}
 .notice{margin-top:6px;color:#0a3a78;min-height:18px}
-.filters{display:grid;gap:12px;grid-template-columns:1fr 1fr}
-.addline{display:flex; gap:8px; align-items:center; margin-top:6px}
-.addline input{flex:1}
-@media (max-width:860px){.filters{grid-template-columns:1fr}}
-@media (max-width:480px){header{padding:12px} main{padding:10px}}
+
+/* Chip multi-dropdown (no inner scroll) */
+.multi {position:relative; display:block;}
+.multi .trigger{
+display:flex; flex-wrap:wrap; gap:6px;
+min-height:42px; padding:6px 10px; border:1px solid #ddd; border-radius:10px; background:#fff;
+}
+.chip{display:inline-flex; align-items:center; gap:6px; padding:6px 10px; background:#f2f6ff; border:1px solid #d8e2ff; border-radius:999px; font:700 12px system-ui}
+.chip .x{cursor:pointer; font-weight:900}
+
+.panel{
+position:absolute; left:0; right:0; top:calc(100% + 6px);
+background:#fff; border:1px solid #ddd; border-radius:12px; padding:10px; z-index:10;
+box-shadow:0 8px 24px rgba(0,0,0,.08);
+}
+.panel .grid{display:flex; flex-wrap:wrap; gap:10px}
+.panel label{display:flex; align-items:center; gap:6px; border:1px solid #eee; padding:6px 10px; border-radius:8px; margin:0}
+.addline{display:flex; gap:8px; align-items:center; margin-top:10px}
+.addline input{flex:1; padding:8px; border:1px solid #ddd; border-radius:8px}
+
+@media (max-width:560px){
+.row{gap:6px}
+}
+
+/* Form sizing */
+input[type="date"]{padding:9px 10px}
+input[inputmode="decimal"]{max-width:160px}
 </style>
 </head>
 <body>
@@ -98,22 +120,14 @@ footer{padding:14px 16px;color:#fff;opacity:.92}
 </header>
 
 <main>
-<!-- Context filters (apply to KPIs, table, and default scope for new entries) -->
+<!-- Context & Filters (each on its own line; compact; no inner scroll) -->
 <div class="card">
-<label>Context & Filters</label>
-<div class="filters">
-
-<div>
 <label>Program</label>
 <input id="program" placeholder="Program (optional)">
-</div>
 
-<div>
 <label>Season</label>
 <input id="season" placeholder="e.g., 2024-2025">
-</div>
 
-<div>
 <label>Gender</label>
 <select id="gender">
 <option value="">Gender (any)</option>
@@ -121,38 +135,17 @@ footer{padding:14px 16px;color:#fff;opacity:.92}
 <option>Female</option>
 <option>Coed</option>
 </select>
-</div>
 
-<!-- PRESET multi-selects -->
-<div>
-<label>Leagues (multi-select)</label>
-<select id="leaguesSel" multiple></select>
-<div class="addline">
-<input id="leagueAdd" placeholder="Add league">
-<button id="addLeague" class="primary" style="padding:8px 10px">Add</button>
-</div>
-</div>
+<label>Leagues</label>
+<div class="multi" id="m-leagues"></div>
 
-<div>
-<label>Teams (multi-select)</label>
-<select id="teamsSel" multiple></select>
-<div class="addline">
-<input id="teamAdd" placeholder="Add team">
-<button id="addTeam" class="primary" style="padding:8px 10px">Add</button>
-</div>
-</div>
+<label>Teams</label>
+<div class="multi" id="m-teams"></div>
 
-<div>
-<label>Tournaments (multi-select)</label>
-<select id="tournSel" multiple></select>
-<div class="addline">
-<input id="tournAdd" placeholder="Add tournament">
-<button id="addTourn" class="primary" style="padding:8px 10px">Add</button>
-</div>
-</div>
+<label>Tournaments</label>
+<div class="multi" id="m-tourn"></div>
 
-</div>
-<div style="margin-top:8px">
+<div style="margin-top:10px">
 <button id="btnApply" class="primary">Apply Filters</button>
 <span id="fmsg" class="small" style="margin-left:8px;color:#0a3a78"></span>
 </div>
@@ -168,7 +161,6 @@ footer{padding:14px 16px;color:#fff;opacity:.92}
 
 <input id="amount" type="text" inputmode="decimal" placeholder="Amount (e.g. 10 or $10)" title="Amount">
 
-<!-- Category dropdown with income/expense groups and Custom -->
 <select id="category" title="Category">
 <option value="">Select category</option>
 <optgroup label="Income">
@@ -217,52 +209,141 @@ footer{padding:14px 16px;color:#fff;opacity:.92}
 </section>
 
 <script>
-// ---- PRESETS (edit these as you like) ----
+// Presets (edit to your org)
 const PRESET_LEAGUES = ['PRBL','AAU League','School League','Summer League','Fall League'];
 const PRESET_TEAMS = ['12U Boys','14U Boys','12U Girls','14U Girls','JV','Varsity'];
 const PRESET_TOURNS = ['Holiday Classic','Spring Tipoff','Summer Jam','State Finals'];
 
-function fillSelect(id, items){
-const el = document.getElementById(id);
-el.innerHTML = '';
-items.forEach(v=>{
-const o=document.createElement('option'); o.value=v; o.textContent=v; el.appendChild(o);
+// ---- Chip Multi Component (no inner scroll) ----
+function MultiChips(rootId, label, presets){
+const root = document.getElementById(rootId);
+const state = new Set();
+const box = document.createElement('div');
+const trigger = document.createElement('div');
+trigger.className = 'trigger';
+trigger.tabIndex = 0;
+
+const panel = document.createElement('div');
+panel.className = 'panel';
+panel.style.display = 'none';
+
+const grid = document.createElement('div');
+grid.className = 'grid';
+
+function renderChips(){
+trigger.innerHTML = '';
+if (!state.size){
+const ph = document.createElement('span');
+ph.style.opacity = '.6';
+ph.textContent = 'Tap to select';
+trigger.appendChild(ph);
+return;
+}
+[...state].forEach(v=>{
+const c = document.createElement('span');
+c.className = 'chip';
+c.innerHTML = v + ' <span class="x" aria-label="remove" title="remove">×</span>';
+c.querySelector('.x').addEventListener('click', (e)=>{
+e.stopPropagation();
+state.delete(v);
+updateCheckbox(v, false);
+renderChips();
+});
+trigger.appendChild(c);
 });
 }
 
-function addToSelect(id, value, selectIt=true){
-const el = document.getElementById(id);
-const exists = Array.from(el.options).some(o => o.value.toLowerCase() === value.toLowerCase());
-if (!exists){
-const o=document.createElement('option'); o.value=value; o.textContent=value; el.appendChild(o);
-}
-if (selectIt){
-Array.from(el.options).forEach(o=>{ if (o.value.toLowerCase()===value.toLowerCase()) o.selected=true; });
-}
+function updateCheckbox(value, checked){
+const cb = grid.querySelector('input[data-val="'+CSS.escape(value)+'"]');
+if (cb) cb.checked = checked;
 }
 
-function getMultiValues(id){
-const el = document.getElementById(id);
-return Array.from(el.selectedOptions).map(o=>o.value).join(',');
+function renderOptions(items){
+grid.innerHTML = '';
+items.forEach(v=>{
+const lab = document.createElement('label');
+const cb = document.createElement('input');
+cb.type = 'checkbox';
+cb.setAttribute('data-val', v);
+cb.checked = state.has(v);
+cb.addEventListener('change', ()=>{
+if (cb.checked) state.add(v); else state.delete(v);
+renderChips();
+});
+lab.appendChild(cb);
+lab.appendChild(document.createTextNode(v));
+grid.appendChild(lab);
+});
 }
+
+const addLine = document.createElement('div');
+addLine.className = 'addline';
+const addInput = document.createElement('input');
+addInput.placeholder = 'Add ' + label.toLowerCase();
+const addBtn = document.createElement('button');
+addBtn.className = 'primary';
+addBtn.textContent = 'Add';
+addBtn.style.padding = '8px 10px';
+addBtn.addEventListener('click', ()=>{
+const v = (addInput.value||'').trim();
+if (!v) return;
+if (!presets.includes(v)) presets.push(v);
+state.add(v);
+renderOptions(presets);
+renderChips();
+addInput.value = '';
+});
+addLine.appendChild(addInput);
+addLine.appendChild(addBtn);
+
+panel.appendChild(grid);
+panel.appendChild(addLine);
+
+function closeAll(){ panel.style.display = 'none'; }
+function toggle(){ panel.style.display = (panel.style.display === 'none') ? 'block' : 'none'; }
+
+trigger.addEventListener('click', toggle);
+document.addEventListener('click', (e)=>{ if (!root.contains(e.target)) closeAll(); });
+
+box.appendChild(trigger);
+box.appendChild(panel);
+root.appendChild(box);
+
+renderOptions(presets);
+renderChips();
+
+return {
+get: () => [...state].join(','),
+set: (arrOrCsv) => {
+state.clear();
+const arr = Array.isArray(arrOrCsv) ? arrOrCsv : String(arrOrCsv||'').split(',').map(s=>s.trim()).filter(Boolean);
+arr.forEach(v => state.add(v));
+renderOptions(presets);
+renderChips();
+}
+};
+}
+
+// Instantiate three multi chip selectors
+const MLeagues = MultiChips('m-leagues','League', [...PRESET_LEAGUES]);
+const MTeams = MultiChips('m-teams','Team', [...PRESET_TEAMS]);
+const MTourn = MultiChips('m-tourn','Tournament', [...PRESET_TOURNS]);
 
 function getFilters(){
 return {
 program: (document.getElementById('program').value||'').trim(),
 season: (document.getElementById('season').value||'').trim(),
 gender: (document.getElementById('gender').value||'').trim(),
-leagues: getMultiValues('leaguesSel'),
-teams: getMultiValues('teamsSel'),
-tournaments: getMultiValues('tournSel')
+leagues: MLeagues.get(),
+teams: MTeams.get(),
+tournaments: MTourn.get()
 };
 }
-
 function q(params){
 const p = new URLSearchParams();
 for (const [k,v] of Object.entries(params)) if (v) p.set(k, v);
 return p.toString() ? ('?'+p.toString()) : '';
 }
-
 async function api(path, opt){ const r=await fetch(path, opt); if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); }
 function fmt(n){ return '$'+(Number(n||0)).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function td(s){ const c=document.createElement('td'); c.textContent=s; return c; }
@@ -301,24 +382,9 @@ document.getElementById('fmsg').textContent = 'Filters applied';
 refresh();
 });
 
-// Add buttons for presets
-document.getElementById('addLeague').addEventListener('click', ()=>{
-const v=(document.getElementById('leagueAdd').value||'').trim(); if(!v) return;
-addToSelect('leaguesSel', v, true); document.getElementById('leagueAdd').value='';
-});
-document.getElementById('addTeam').addEventListener('click', ()=>{
-const v=(document.getElementById('teamAdd').value||'').trim(); if(!v) return;
-addToSelect('teamsSel', v, true); document.getElementById('teamAdd').value='';
-});
-document.getElementById('addTourn').addEventListener('click', ()=>{
-const v=(document.getElementById('tournAdd').value||'').trim(); if(!v) return;
-addToSelect('tournSel', v, true); document.getElementById('tournAdd').value='';
-});
-
 document.getElementById('btnAdd').addEventListener('click', async ()=>{
 const type = (document.getElementById('type').value || '').trim();
 
-// Accept $10 or 10
 const amtRaw = (document.getElementById('amount').value || '').toString().replace(/[^0-9.\-]/g,'');
 const amount = parseFloat(amtRaw);
 
@@ -327,7 +393,6 @@ const note = (document.getElementById('note').value || '').trim();
 const dateEl = (document.getElementById('date').value || '').trim();
 const date = dateEl ? new Date(dateEl + 'T12:00:00Z').toISOString() : null;
 
-// Current scope from multi-selects/inputs
 const { program, season, gender, leagues, teams, tournaments } = getFilters();
 
 const msg = document.getElementById('msg');
@@ -365,11 +430,7 @@ msg.textContent = 'Error: ' + (e.message || 'network');
 }
 });
 
-// Initialize presets into selects and select none by default
-fillSelect('leaguesSel', PRESET_LEAGUES);
-fillSelect('teamsSel', PRESET_TEAMS);
-fillSelect('tournSel', PRESET_TOURNS);
-
+// Initial render
 refresh();
 </script>
 </body>
@@ -379,20 +440,16 @@ refresh();
 const server = http.createServer((req, res) => {
 const u = new URL(req.url, 'http://' + (req.headers.host || 'localhost'));
 
-// Optional redirect to custom domain
 if (maybeRedirectToCustomDomain(req, res, u)) return;
 
-// Health
 if (req.method === 'GET' && u.pathname === '/health') {
 return text(res, 200, 'OK');
 }
 
-// UI
 if (req.method === 'GET' && u.pathname === '/') {
 return html(res, PAGE);
 }
 
-// Helper to extract filters from query
 function getQueryFilters(urlObj){
 const g = k => {
 const v = urlObj.searchParams.get(k);
@@ -408,7 +465,6 @@ tournaments: g('tournaments')
 };
 }
 
-// --- API: add entry (robust parse & validate) ---
 if (req.method === 'POST' && u.pathname === '/api/ledger/add') {
 let body = '';
 req.on('data', c => body += c);
@@ -445,7 +501,6 @@ return json(res, 400, { ok: false, error: String(e.message || e) });
 return;
 }
 
-// List (supports filters)
 if (req.method === 'GET' && u.pathname === '/api/ledger/list') {
 try {
 const flt = getQueryFilters(u);
@@ -455,7 +510,6 @@ return json(res, 500, { ok:false, error:String(e) });
 }
 }
 
-// Summary (supports filters + range)
 if (req.method === 'GET' && u.pathname === '/api/ledger/summary') {
 try {
 const days = Math.max(1, Math.min(365, Number(u.searchParams.get('range')||30)));
@@ -466,7 +520,6 @@ return json(res, 500, { ok:false, error:String(e) });
 }
 }
 
-// Export CSV (supports filters)
 if (req.method === 'GET' && u.pathname === '/api/ledger/export.csv') {
 try{
 const flt = getQueryFilters(u);
@@ -483,7 +536,6 @@ return json(res, 500, { ok:false, error:String(e) });
 }
 }
 
-// 404
 return text(res, 404, 'Not Found');
 });
 
