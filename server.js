@@ -1,13 +1,14 @@
-// Hey Bori Cash Flow — complete single-file app (no external deps)
+// Hey Bori Cash Flow — full app with diagnostics (no external deps)
+//
 // Endpoints:
 // GET /health
-// GET / -> HTML UI (add/list/summary/export + filters)
+// GET / -> HTML UI (add/list/summary/export + filters + diagnostics)
 // POST /api/ledger/add -> {type:'income'|'expense', amount, category, note?, date?, team?, league?}
-// GET /api/ledger/list -> {entries:[...]}
+// GET /api/ledger/list
 // GET /api/ledger/list.filter -> ?team=&league=&from=YYYY-MM-DD&to=YYYY-MM-DD
-// GET /api/ledger/meta -> {teams:[...], leagues:[...], categories:[...]}
-// GET /api/ledger/summary -> ?range=30 (days)
-// GET /api/ledger/export.csv -> CSV file
+// GET /api/ledger/meta
+// GET /api/ledger/summary -> ?range=30
+// GET /api/ledger/export.csv
 // DELETE /api/ledger/delete -> ?id=...
 
 process.on('uncaughtException', e => console.error('[uncaughtException]', e));
@@ -20,7 +21,7 @@ const path = require('path');
 const crypto = require('crypto');
 
 const PORT = Number(process.env.PORT || 10000);
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data'); // on Render, mount a Disk at /data
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data'); // mount a Render Disk at /data
 const LEDGER_FN = path.join(DATA_DIR, 'ledger.json');
 
 // ---------- storage ----------
@@ -45,7 +46,7 @@ const ct = String(req.headers['content-type']||'').toLowerCase();
 if (b && ct.includes('application/json')){
 try{ return resolve(JSON.parse(b)); }catch(e){ return resolve({__parseError:'invalid JSON: '+e.message}); }
 }
-// x-www-form-urlencoded
+// form-encoded
 if (b && ct.includes('application/x-www-form-urlencoded')){
 const out={};
 b.split('&').forEach(kv=>{
@@ -70,6 +71,7 @@ function csvEsc(s){ s=(s==null?'':String(s)); return /[",\n]/.test(s) ? `"${s.re
 async function handleAdd(req, res){
 try{
 const body = await parseBody(req);
+console.log('[ADD] headers=', req.headers, 'body=', body);
 if (body.__parseError) return json(res,400,{ok:false,error:body.__parseError});
 
 const type = String(body.type||'').toLowerCase();
@@ -94,9 +96,10 @@ updatedAt: Date.now()
 const db = readDB();
 db.entries.unshift(entry); // newest first
 writeDB(db);
+console.log('[ADD ok]', entry.id);
 return json(res,200,{ok:true, entry});
 }catch(e){
-console.error('add error', e);
+console.error('[ADD error]', e);
 return json(res,500,{ok:false,error:'server add error: '+(e.message||e)});
 }
 }
@@ -233,7 +236,7 @@ return json(res,500,{ok:false,error:'server delete error: '+(e.message||e)});
 }
 }
 
-// ---------- HTML UI ----------
+// ---------- HTML UI (includes Diagnostics) ----------
 function uiHTML(){
 return `<!doctype html>
 <html lang="en">
@@ -268,6 +271,7 @@ th{color:#c8d3e6;font-weight:600}
 .right{text-align:right}
 .small{font-size:12px;color:var(--muted)}
 a{color:#80bfff}
+.err{color:#ffd3d6}
 </style>
 </head>
 <body>
@@ -368,11 +372,29 @@ a{color:#80bfff}
 </div>
 <div id="tableBox" style="margin-top:8px">Loading…</div>
 </section>
+
+<section class="card">
+<h3 style="margin:0 0 8px 0">Diagnostics</h3>
+<div class="row">
+<div class="col"><button id="diagSeed">Seed $50 income</button></div>
+<div class="col"><button id="diagList">GET /list</button></div>
+<div class="col"><button id="diagSummary">GET /summary</button></div>
+<div class="col"><button id="diagAddBad">Add (bad body)</button></div>
+</div>
+<pre id="diagOut" class="small" style="white-space:pre-wrap;margin-top:8px;background:#0d1220;padding:8px;border-radius:8px;border:1px solid #233040;max-height:220px;overflow:auto"></pre>
+</section>
 </main>
 
 <script>
 const $ = sel => document.querySelector(sel);
 function fmt(n){ return (Number(n)||0).toFixed(2); }
+
+async function fetchWithTimeout(url, opts={}, ms=12000){
+const ctrl = new AbortController();
+const t = setTimeout(()=>ctrl.abort(), ms);
+try{ return await fetch(url, {...opts, signal: ctrl.signal}); }
+finally{ clearTimeout(t); }
+}
 
 async function addEntry(){
 const body = {
@@ -386,7 +408,7 @@ league: $('#league').value.trim()
 };
 $('#status').textContent = 'Adding…';
 try{
-const r = await fetch('/api/ledger/add', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify(body)});
+const r = await fetchWithTimeout('/api/ledger/add', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify(body)});
 const txt = await r.text(); let j;
 try{ j = JSON.parse(txt); }catch{ j = {ok:false,error:'non-JSON', raw:txt}; }
 if (!j.ok){ $('#status').textContent = 'Error: ' + (j.error||('HTTP '+r.status)); return; }
@@ -394,7 +416,7 @@ $('#status').textContent = 'Added ✓';
 $('#amount').value=''; $('#note').value=''; document.querySelector('#amount')?.focus();
 loadMeta(); loadLedgerFiltered(); loadSummary();
 }catch(err){
-$('#status').textContent = 'Network error: '+(err?.message||String(err));
+$('#status').textContent = 'Network/timeout: ' + (err?.message||String(err));
 }
 }
 
@@ -403,7 +425,7 @@ try{
 const days = Math.max(1, Math.min(365, Number($('#range')?.value||30)));
 $('#rangeSpan').textContent = String(days);
 $('#summaryBox').textContent = 'Loading…';
-const resp = await fetch('/api/ledger/summary?range='+encodeURIComponent(days), {cache:'no-store'});
+const resp = await fetchWithTimeout('/api/ledger/summary?range='+encodeURIComponent(days), {cache:'no-store'});
 if (!resp.ok){ $('#summaryBox').textContent = 'HTTP '+resp.status; return; }
 const j = await resp.json(); if (!j.ok){ $('#summaryBox').textContent = 'Error: '+(j.error||'summary'); return; }
 const t = j.totals || {income:0,expense:0,net:0};
@@ -428,14 +450,15 @@ const row = byTL[k] || {}; html += '<tr><td>'+k+'</td><td class="right">$'+fmt(r
 html += '</tbody></table>';
 }
 $('#summaryBox').innerHTML = html;
-}catch(err){ $('#summaryBox').textContent = 'Unexpected: '+(err?.message||String(err)); }
+}catch(err){ $('#summaryBox').textContent = 'Timeout/Network: '+(err?.message||String(err)); }
 }
 
 async function loadMeta(){
 try{
-const r = await fetch('/api/ledger/meta',{cache:'no-store'}); const j = await r.json();
+const r = await fetchWithTimeout('/api/ledger/meta',{cache:'no-store'});
+const j = await r.json();
 if (!j.ok) return;
-const tSel = document.querySelector('#fTeam'); const lSel = document.querySelector('#fLeague');
+const tSel = $('#fTeam'); const lSel = $('#fLeague');
 if (tSel){ tSel.innerHTML = '<option value="">All teams</option>' + (j.teams||[]).map(v=>'<option>'+v+'</option>').join(''); }
 if (lSel){ lSel.innerHTML = '<option value="">All leagues</option>' + (j.leagues||[]).map(v=>'<option>'+v+'</option>').join(''); }
 }catch(e){}
@@ -449,7 +472,8 @@ if (from) qs.set('from',from); if (to) qs.set('to',to);
 const box = $('#tableBox'); box.textContent = 'Loading…';
 try{
 const url = qs.toString() ? '/api/ledger/list.filter?'+qs.toString() : '/api/ledger/list';
-const r = await fetch(url,{cache:'no-store'}); const j = await r.json();
+const r = await fetchWithTimeout(url,{cache:'no-store'});
+const j = await r.json();
 if (!j.ok){ box.textContent = 'Failed: '+(j.error||'unknown'); return; }
 const rows = j.entries || [];
 if (!rows.length){ box.textContent = 'No entries for these filters.'; return; }
@@ -468,17 +492,35 @@ html += '<tr>'+
 }
 html += '</tbody></table>';
 box.innerHTML = html;
-}catch(e){ box.textContent = 'Network error: '+(e?.message||String(e)); }
+}catch(e){ box.textContent = 'Timeout/Network: '+(e?.message||String(e)); }
 }
 
 async function deleteEntry(id){
 if(!confirm('Delete this entry?')) return;
 try{
-const r = await fetch('/api/ledger/delete?id='+encodeURIComponent(id), {method:'DELETE'});
+const r = await fetchWithTimeout('/api/ledger/delete?id='+encodeURIComponent(id), {method:'DELETE'});
 const j = await r.json();
 if (!j.ok){ alert('Delete failed: ' + (j.error||'unknown')); return; }
 loadMeta(); loadLedgerFiltered(); loadSummary();
-}catch(e){ alert('Network error: '+(e?.message||String(e))); }
+}catch(e){ alert('Timeout/Network: '+(e?.message||String(e))); }
+}
+
+// Diagnostics helpers
+async function diagSeed(){
+const body = {type:'income', amount:50, category:'registration', note:'seed', date: (new Date()).toISOString().slice(0,10)};
+const r = await fetchWithTimeout('/api/ledger/add', {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body)});
+const t = await r.text(); $('#diagOut').textContent = 'POST /api/ledger/add → '+t;
+loadMeta(); loadLedgerFiltered(); loadSummary();
+}
+async function diagList(){
+const r = await fetchWithTimeout('/api/ledger/list'); const t = await r.text(); $('#diagOut').textContent = 'GET /api/ledger/list → '+t;
+}
+async function diagSummary(){
+const r = await fetchWithTimeout('/api/ledger/summary?range='+(Number($('#range').value||30))); const t = await r.text(); $('#diagOut').textContent = 'GET /api/ledger/summary → '+t;
+}
+async function diagAddBad(){
+const r = await fetchWithTimeout('/api/ledger/add', {method:'POST', headers:{'content-type':'application/json'}, body:'{"type":"income","amount":"BAD"}'});
+const t = await r.text(); $('#diagOut').textContent = 'POST /api/ledger/add (bad) → '+t;
 }
 
 document.addEventListener('click', (e)=>{
@@ -489,6 +531,10 @@ if (e.target && e.target.id==='fClear'){
 $('#fTeam').value=''; $('#fLeague').value=''; $('#fFrom').value=''; $('#fTo').value='';
 loadLedgerFiltered();
 }
+if (e.target && e.target.id==='diagSeed') diagSeed();
+if (e.target && e.target.id==='diagList') diagList();
+if (e.target && e.target.id==='diagSummary') diagSummary();
+if (e.target && e.target.id==='diagAddBad') diagAddBad();
 });
 document.addEventListener('keydown', (e)=>{
 if (e.key==='Enter' && document.activeElement && document.activeElement.tagName!=='TEXTAREA'){
@@ -520,7 +566,7 @@ if (req.method === 'GET' && u.pathname === '/') return send(res,200,{'Content-Ty
 // API
 if (req.method === 'POST' && u.pathname === '/api/ledger/add') return handleAdd(req,res);
 if (req.method === 'GET' && u.pathname === '/api/ledger/list') return listEntries(req,res);
-if (req.method === 'GET' && u.pathname === '/api/ledger/list.filter')return listEntriesFiltered(req,res,u);
+if (req.method === 'GET' && u.pathname === '/api/ledger/list.filter') return listEntriesFiltered(req,res,u);
 if (req.method === 'GET' && u.pathname === '/api/ledger/meta') return meta(req,res);
 if (req.method === 'GET' && u.pathname === '/api/ledger/summary') return summarize(req,res,u);
 if (req.method === 'GET' && u.pathname === '/api/ledger/export.csv') return exportCSV(req,res);
