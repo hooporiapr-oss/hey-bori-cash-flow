@@ -1,4 +1,4 @@
-// server.js — Hey Bori Cash Flow™ (multi-league/team/tournament)
+// server.js — Hey Bori Cash Flow™ (multi-league/team/tournament + PRESET DROPDOWNS)
 // Zero dependencies. Render-ready. Works with ledger.js.
 //
 // ENV:
@@ -66,7 +66,7 @@ main{padding:12px 14px;display:grid;gap:12px}
 label{font:700 12px system-ui;display:block;margin-bottom:6px;color:#223}
 .row{display:flex;gap:8px;flex-wrap:wrap}
 input,select{padding:10px;border:1px solid #ddd;border-radius:10px;font:600 14px system-ui}
-input[type="text"][inputmode="decimal"]{max-width:160px}
+select[multiple]{min-height:120px}
 button.primary{background:#0a3a78;color:#fff;border:1px solid #0c2a55;border-radius:10px;padding:10px 14px;font:800 14px system-ui;cursor:pointer}
 button{cursor:pointer}
 .table{width:100%;border-collapse:collapse}
@@ -78,8 +78,10 @@ button{cursor:pointer}
 footer{padding:14px 16px;color:#fff;opacity:.92}
 .small{font:600 12px/1.4 system-ui}
 .notice{margin-top:6px;color:#0a3a78;min-height:18px}
-.filters{display:grid;gap:8px;grid-template-columns:1fr 1fr}
-@media (max-width:640px){.filters{grid-template-columns:1fr}}
+.filters{display:grid;gap:12px;grid-template-columns:1fr 1fr}
+.addline{display:flex; gap:8px; align-items:center; margin-top:6px}
+.addline input{flex:1}
+@media (max-width:860px){.filters{grid-template-columns:1fr}}
 @media (max-width:480px){header{padding:12px} main{padding:10px}}
 </style>
 </head>
@@ -96,21 +98,59 @@ footer{padding:14px 16px;color:#fff;opacity:.92}
 </header>
 
 <main>
-<!-- Context filters (apply to KPIs, table, and as defaults for new entries) -->
+<!-- Context filters (apply to KPIs, table, and default scope for new entries) -->
 <div class="card">
 <label>Context & Filters</label>
 <div class="filters">
+
+<div>
+<label>Program</label>
 <input id="program" placeholder="Program (optional)">
-<input id="season" placeholder="Season (e.g., 2024-2025)">
+</div>
+
+<div>
+<label>Season</label>
+<input id="season" placeholder="e.g., 2024-2025">
+</div>
+
+<div>
+<label>Gender</label>
 <select id="gender">
 <option value="">Gender (any)</option>
 <option>Male</option>
 <option>Female</option>
 <option>Coed</option>
 </select>
-<input id="leagues" placeholder="Leagues (comma-separated, e.g. PRBL, Summer)">
-<input id="teams" placeholder="Teams (comma-separated, e.g. 12U Blue, 14U Girls)">
-<input id="tournaments" placeholder="Tournaments (comma-separated)">
+</div>
+
+<!-- PRESET multi-selects -->
+<div>
+<label>Leagues (multi-select)</label>
+<select id="leaguesSel" multiple></select>
+<div class="addline">
+<input id="leagueAdd" placeholder="Add league">
+<button id="addLeague" class="primary" style="padding:8px 10px">Add</button>
+</div>
+</div>
+
+<div>
+<label>Teams (multi-select)</label>
+<select id="teamsSel" multiple></select>
+<div class="addline">
+<input id="teamAdd" placeholder="Add team">
+<button id="addTeam" class="primary" style="padding:8px 10px">Add</button>
+</div>
+</div>
+
+<div>
+<label>Tournaments (multi-select)</label>
+<select id="tournSel" multiple></select>
+<div class="addline">
+<input id="tournAdd" placeholder="Add tournament">
+<button id="addTourn" class="primary" style="padding:8px 10px">Add</button>
+</div>
+</div>
+
 </div>
 <div style="margin-top:8px">
 <button id="btnApply" class="primary">Apply Filters</button>
@@ -177,21 +217,52 @@ footer{padding:14px 16px;color:#fff;opacity:.92}
 </section>
 
 <script>
+// ---- PRESETS (edit these as you like) ----
+const PRESET_LEAGUES = ['PRBL','AAU League','School League','Summer League','Fall League'];
+const PRESET_TEAMS = ['12U Boys','14U Boys','12U Girls','14U Girls','JV','Varsity'];
+const PRESET_TOURNS = ['Holiday Classic','Spring Tipoff','Summer Jam','State Finals'];
+
+function fillSelect(id, items){
+const el = document.getElementById(id);
+el.innerHTML = '';
+items.forEach(v=>{
+const o=document.createElement('option'); o.value=v; o.textContent=v; el.appendChild(o);
+});
+}
+
+function addToSelect(id, value, selectIt=true){
+const el = document.getElementById(id);
+const exists = Array.from(el.options).some(o => o.value.toLowerCase() === value.toLowerCase());
+if (!exists){
+const o=document.createElement('option'); o.value=value; o.textContent=value; el.appendChild(o);
+}
+if (selectIt){
+Array.from(el.options).forEach(o=>{ if (o.value.toLowerCase()===value.toLowerCase()) o.selected=true; });
+}
+}
+
+function getMultiValues(id){
+const el = document.getElementById(id);
+return Array.from(el.selectedOptions).map(o=>o.value).join(',');
+}
+
 function getFilters(){
 return {
 program: (document.getElementById('program').value||'').trim(),
 season: (document.getElementById('season').value||'').trim(),
 gender: (document.getElementById('gender').value||'').trim(),
-leagues: (document.getElementById('leagues').value||'').trim(),
-teams: (document.getElementById('teams').value||'').trim(),
-tournaments: (document.getElementById('tournaments').value||'').trim()
+leagues: getMultiValues('leaguesSel'),
+teams: getMultiValues('teamsSel'),
+tournaments: getMultiValues('tournSel')
 };
 }
+
 function q(params){
 const p = new URLSearchParams();
 for (const [k,v] of Object.entries(params)) if (v) p.set(k, v);
 return p.toString() ? ('?'+p.toString()) : '';
 }
+
 async function api(path, opt){ const r=await fetch(path, opt); if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); }
 function fmt(n){ return '$'+(Number(n||0)).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function td(s){ const c=document.createElement('td'); c.textContent=s; return c; }
@@ -230,6 +301,20 @@ document.getElementById('fmsg').textContent = 'Filters applied';
 refresh();
 });
 
+// Add buttons for presets
+document.getElementById('addLeague').addEventListener('click', ()=>{
+const v=(document.getElementById('leagueAdd').value||'').trim(); if(!v) return;
+addToSelect('leaguesSel', v, true); document.getElementById('leagueAdd').value='';
+});
+document.getElementById('addTeam').addEventListener('click', ()=>{
+const v=(document.getElementById('teamAdd').value||'').trim(); if(!v) return;
+addToSelect('teamsSel', v, true); document.getElementById('teamAdd').value='';
+});
+document.getElementById('addTourn').addEventListener('click', ()=>{
+const v=(document.getElementById('tournAdd').value||'').trim(); if(!v) return;
+addToSelect('tournSel', v, true); document.getElementById('tournAdd').value='';
+});
+
 document.getElementById('btnAdd').addEventListener('click', async ()=>{
 const type = (document.getElementById('type').value || '').trim();
 
@@ -242,7 +327,7 @@ const note = (document.getElementById('note').value || '').trim();
 const dateEl = (document.getElementById('date').value || '').trim();
 const date = dateEl ? new Date(dateEl + 'T12:00:00Z').toISOString() : null;
 
-// Use current filters as defaults for new entry scope
+// Current scope from multi-selects/inputs
 const { program, season, gender, leagues, teams, tournaments } = getFilters();
 
 const msg = document.getElementById('msg');
@@ -280,10 +365,10 @@ msg.textContent = 'Error: ' + (e.message || 'network');
 }
 });
 
-document.getElementById('btnExport').addEventListener('click', ()=>{
-const flt = getFilters();
-window.location.href='/api/ledger/export.csv'+q(flt);
-});
+// Initialize presets into selects and select none by default
+fillSelect('leaguesSel', PRESET_LEAGUES);
+fillSelect('teamsSel', PRESET_TEAMS);
+fillSelect('tournSel', PRESET_TOURNS);
 
 refresh();
 </script>
@@ -317,9 +402,9 @@ return {
 program: g('program'),
 season: g('season'),
 gender: g('gender'),
-leagues: g('leagues'), // comma-separated supported
-teams: g('teams'), // comma-separated supported
-tournaments: g('tournaments') // comma-separated supported
+leagues: g('leagues'),
+teams: g('teams'),
+tournaments: g('tournaments')
 };
 }
 
