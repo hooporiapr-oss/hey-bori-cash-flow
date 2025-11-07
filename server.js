@@ -1,12 +1,14 @@
-// Hey Bori Cash Flow — single-file server + mobile UI (no external deps)
+// Hey Bori Cash Flow — complete single-file app (no external deps)
 // Endpoints:
 // GET /health
-// GET / => HTML UI (add/list/summary/export)
-// POST /api/ledger/add => {type:'income'|'expense', amount, category, note?, date?, team?, league?}
-// GET /api/ledger/list => {entries:[...]}
-// GET /api/ledger/summary => ?range=30 (days)
-// GET /api/ledger/export.csv => CSV download
-// DELETE /api/ledger/delete => ?id=...
+// GET / -> HTML UI (add/list/summary/export + filters)
+// POST /api/ledger/add -> {type:'income'|'expense', amount, category, note?, date?, team?, league?}
+// GET /api/ledger/list -> {entries:[...]}
+// GET /api/ledger/list.filter -> ?team=&league=&from=YYYY-MM-DD&to=YYYY-MM-DD
+// GET /api/ledger/meta -> {teams:[...], leagues:[...], categories:[...]}
+// GET /api/ledger/summary -> ?range=30 (days)
+// GET /api/ledger/export.csv -> CSV file
+// DELETE /api/ledger/delete -> ?id=...
 
 process.on('uncaughtException', e => console.error('[uncaughtException]', e));
 process.on('unhandledRejection', e => console.error('[unhandledRejection]', e));
@@ -18,7 +20,7 @@ const path = require('path');
 const crypto = require('crypto');
 
 const PORT = Number(process.env.PORT || 10000);
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data'); // on Render, mount a Disk at /data
 const LEDGER_FN = path.join(DATA_DIR, 'ledger.json');
 
 // ---------- storage ----------
@@ -33,7 +35,31 @@ function writeDB(db){ fs.writeFileSync(LEDGER_FN, JSON.stringify(db, null, 2)); 
 function send(res, code, headers, body){ res.writeHead(code, headers); res.end(body); }
 function text(res, code, s){ send(res, code, {'Content-Type':'text/plain; charset=utf-8','Cache-Control':'no-store'}, String(s)); }
 function json(res, code, obj){ send(res, code, {'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}, JSON.stringify(obj)); }
-function parseBody(req){ return new Promise(r=>{ let b=''; req.on('data',c=>b+=c); req.on('end',()=>{ try{ r(b?JSON.parse(b):{});}catch{ r({__parseError:true}); } }); }); }
+
+function parseBody(req){
+return new Promise(resolve=>{
+let b=''; req.on('data',c=>{ b+=c; if (b.length>1e6) req.destroy(); }); // ~1MB guard
+req.on('end', ()=>{
+const ct = String(req.headers['content-type']||'').toLowerCase();
+// JSON
+if (b && ct.includes('application/json')){
+try{ return resolve(JSON.parse(b)); }catch(e){ return resolve({__parseError:'invalid JSON: '+e.message}); }
+}
+// x-www-form-urlencoded
+if (b && ct.includes('application/x-www-form-urlencoded')){
+const out={};
+b.split('&').forEach(kv=>{
+const [k,v=''] = kv.split('=');
+out[decodeURIComponent(k||'')] = decodeURIComponent(v.replace(/\+/g,' ')||'');
+});
+return resolve(out);
+}
+// fallback
+try{ return resolve(b?JSON.parse(b):{}); }catch{ return resolve({}); }
+});
+});
+}
+
 function uuid(){ return crypto.randomUUID ? crypto.randomUUID() : (Date.now().toString(36)+Math.random().toString(36).slice(2)); }
 function toNumber(x){ const n = Number(x); return isFinite(n) ? n : NaN; }
 function todayISO(){ return new Date().toISOString().slice(0,10); }
@@ -42,8 +68,9 @@ function csvEsc(s){ s=(s==null?'':String(s)); return /[",\n]/.test(s) ? `"${s.re
 
 // ---------- API handlers ----------
 async function handleAdd(req, res){
+try{
 const body = await parseBody(req);
-if (body.__parseError) return json(res,400,{ok:false,error:'invalid JSON'});
+if (body.__parseError) return json(res,400,{ok:false,error:body.__parseError});
 
 const type = String(body.type||'').toLowerCase();
 if (!['income','expense'].includes(type)) return json(res,400,{ok:false,error:'type must be income|expense'});
@@ -54,7 +81,7 @@ if (isNaN(amount) || amount <= 0) return json(res,400,{ok:false,error:'amount mu
 const entry = {
 id: uuid(),
 type,
-amount: Number(amount.toFixed(2)),
+amount: Number(Number(amount).toFixed(2)),
 category: (body.category||'').trim() || '(uncategorized)',
 note: (body.note||'').trim(),
 date: clampISODate(body.date),
@@ -68,17 +95,75 @@ const db = readDB();
 db.entries.unshift(entry); // newest first
 writeDB(db);
 return json(res,200,{ok:true, entry});
+}catch(e){
+console.error('add error', e);
+return json(res,500,{ok:false,error:'server add error: '+(e.message||e)});
+}
 }
 
 function listEntries(req, res){
+try{
 const db = readDB();
 const out = [...(db.entries||[])].sort((a,b)=>{
-const d = String(b.date||'').localeCompare(String(a.date||'')); return d || (b.createdAt||0)-(a.createdAt||0);
+const d = String(b.date||'').localeCompare(String(a.date||''));
+return d || ((b.createdAt||0) - (a.createdAt||0));
 });
 return json(res,200,{ok:true, entries: out});
+}catch(e){
+return json(res,500,{ok:false,error:'server list error: '+(e.message||e)});
+}
+}
+
+function listEntriesFiltered(req, res, u){
+try{
+const team = (u.searchParams.get('team')||'').trim();
+const league = (u.searchParams.get('league')||'').trim();
+const from = u.searchParams.get('from');
+const to = u.searchParams.get('to');
+const fromT = from ? new Date(from).getTime() : -Infinity;
+const toT = to ? new Date(to).getTime()+86400000-1 : +Infinity;
+
+const db = readDB();
+let rows = [...(db.entries||[])];
+if (team) rows = rows.filter(e=> (e.team||'')===team);
+if (league) rows = rows.filter(e=> (e.league||'')===league);
+if (from || to){
+rows = rows.filter(e=>{
+const t = new Date(e.date||todayISO()).getTime();
+return isFinite(t) && t>=fromT && t<=toT;
+});
+}
+rows.sort((a,b)=>{
+const d = String(b.date||'').localeCompare(String(a.date||''));
+return d || ((b.createdAt||0) - (a.createdAt||0));
+});
+return json(res,200,{ok:true, entries: rows});
+}catch(e){
+return json(res,500,{ok:false,error:'server list(filter) error: '+(e.message||e)});
+}
+}
+
+function meta(req, res){
+try{
+const db = readDB();
+const teams = new Set(), leagues = new Set(), cats = new Set();
+for (const e of (db.entries||[])){
+if (e.team) teams.add(e.team);
+if (e.league) leagues.add(e.league);
+if (e.category) cats.add(e.category);
+}
+return json(res,200,{ok:true,
+teams:[...teams].sort((a,b)=>a.localeCompare(b)),
+leagues:[...leagues].sort((a,b)=>a.localeCompare(b)),
+categories:[...cats].sort((a,b)=>a.localeCompare(b))
+});
+}catch(e){
+return json(res,500,{ok:false,error:'server meta error: '+(e.message||e)});
+}
 }
 
 function summarize(req, res, u){
+try{
 const days = Math.max(1, Math.min(365, Number(u.searchParams.get('range') || 30)));
 const cutoff = Date.now() - days*24*60*60*1000;
 const db = readDB();
@@ -97,10 +182,20 @@ const tl = (e.team||'-')+' | '+(e.league||'-');
 byTL[tl] = byTL[tl] || {income:0,expense:0}; byTL[tl][e.type]+=e.amount;
 }
 const net = Number((income - expense).toFixed(2));
-return json(res,200,{ok:true, rangeDays:days, totals:{income:+income.toFixed(2), expense:+expense.toFixed(2), net}, byCategory:byCat, byTeamLeague:byTL, count:within.length});
+return json(res,200,{
+ok:true,
+rangeDays:days,
+totals:{income:+income.toFixed(2), expense:+expense.toFixed(2), net},
+byCategory:byCat, byTeamLeague:byTL,
+count:within.length
+});
+}catch(e){
+return json(res,500,{ok:false,error:'server summary error: '+(e.message||e)});
+}
 }
 
 function exportCSV(req, res){
+try{
 const db = readDB();
 const rows = [
 ['id','date','type','amount','category','note','team','league','createdAt','updatedAt'].map(csvEsc).join(',')
@@ -119,9 +214,13 @@ send(res,200,{
 'Content-Disposition':'attachment; filename="hey-bori-cashflow.csv"',
 'Cache-Control':'no-store'
 }, csv);
+}catch(e){
+return text(res,500,'CSV error: '+(e.message||e));
+}
 }
 
 function deleteOne(req, res, u){
+try{
 const id = (u.searchParams.get('id')||'').trim();
 if (!id) return json(res,400,{ok:false,error:'id required'});
 const db = readDB();
@@ -129,6 +228,9 @@ const before = db.entries.length;
 db.entries = db.entries.filter(e => String(e.id)!==id);
 writeDB(db);
 return json(res,200,{ok:true, removed: before - db.entries.length});
+}catch(e){
+return json(res,500,{ok:false,error:'server delete error: '+(e.message||e)});
+}
 }
 
 // ---------- HTML UI ----------
@@ -240,7 +342,30 @@ a{color:#80bfff}
 
 <section class="card">
 <h3 style="margin:0 0 8px 0">Ledger</h3>
-<div class="small">Newest first. Use Delete to correct mistakes (then re-add).</div>
+<div class="row">
+<div class="col">
+<label>Team filter</label>
+<select id="fTeam"><option value="">All teams</option></select>
+</div>
+<div class="col">
+<label>League filter</label>
+<select id="fLeague"><option value="">All leagues</option></select>
+</div>
+<div class="col">
+<label>From</label>
+<input id="fFrom" type="date"/>
+</div>
+<div class="col">
+<label>To</label>
+<input id="fTo" type="date"/>
+</div>
+<div class="col" style="align-self:end">
+<button id="fApply">Apply</button>
+</div>
+<div class="col" style="align-self:end">
+<button id="fClear">Clear</button>
+</div>
+</div>
 <div id="tableBox" style="margin-top:8px">Loading…</div>
 </section>
 </main>
@@ -260,21 +385,74 @@ team: $('#team').value.trim(),
 league: $('#league').value.trim()
 };
 $('#status').textContent = 'Adding…';
+try{
 const r = await fetch('/api/ledger/add', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify(body)});
-const j = await r.json();
-if (!j.ok){ $('#status').textContent = 'Error: ' + (j.error||'unknown'); return; }
+const txt = await r.text(); let j;
+try{ j = JSON.parse(txt); }catch{ j = {ok:false,error:'non-JSON', raw:txt}; }
+if (!j.ok){ $('#status').textContent = 'Error: ' + (j.error||('HTTP '+r.status)); return; }
 $('#status').textContent = 'Added ✓';
-// clear quick fields
-$('#amount').value=''; $('#note').value='';
-loadLedger(); loadSummary();
+$('#amount').value=''; $('#note').value=''; document.querySelector('#amount')?.focus();
+loadMeta(); loadLedgerFiltered(); loadSummary();
+}catch(err){
+$('#status').textContent = 'Network error: '+(err?.message||String(err));
+}
 }
 
-async function loadLedger(){
-$('#tableBox').textContent = 'Loading…';
-const r = await fetch('/api/ledger/list'); const j = await r.json();
-if (!j.ok){ $('#tableBox').textContent = 'Failed to load'; return; }
+async function loadSummary(){
+try{
+const days = Math.max(1, Math.min(365, Number($('#range')?.value||30)));
+$('#rangeSpan').textContent = String(days);
+$('#summaryBox').textContent = 'Loading…';
+const resp = await fetch('/api/ledger/summary?range='+encodeURIComponent(days), {cache:'no-store'});
+if (!resp.ok){ $('#summaryBox').textContent = 'HTTP '+resp.status; return; }
+const j = await resp.json(); if (!j.ok){ $('#summaryBox').textContent = 'Error: '+(j.error||'summary'); return; }
+const t = j.totals || {income:0,expense:0,net:0};
+let html = '<div><b>Totals</b> — Income: $'+fmt(t.income)+' · Expense: $'+fmt(t.expense)+' · Net: $'+fmt(t.net)+'</div>';
+const byCat = j.byCategory || {}; const byTL = j.byTeamLeague || {};
+html += '<div style="height:10px"></div><div><b>By Category</b></div>';
+if (Object.keys(byCat).length===0){ html += '<div class="small">none</div>'; }
+else {
+html += '<table><thead><tr><th>Category</th><th class="right">Income</th><th class="right">Expense</th></tr></thead><tbody>';
+for (const k of Object.keys(byCat)){
+const row = byCat[k] || {}; html += '<tr><td>'+k+'</td><td class="right">$'+fmt(row.income||0)+'</td><td class="right">$'+fmt(row.expense||0)+'</td></tr>';
+}
+html += '</tbody></table>';
+}
+html += '<div style="height:10px"></div><div><b>By Team | League</b></div>';
+if (Object.keys(byTL).length===0){ html += '<div class="small">none</div>'; }
+else {
+html += '<table><thead><tr><th>Team | League</th><th class="right">Income</th><th class="right">Expense</th></tr></thead><tbody>';
+for (const k of Object.keys(byTL)){
+const row = byTL[k] || {}; html += '<tr><td>'+k+'</td><td class="right">$'+fmt(row.income||0)+'</td><td class="right">$'+fmt(row.expense||0)+'</td></tr>';
+}
+html += '</tbody></table>';
+}
+$('#summaryBox').innerHTML = html;
+}catch(err){ $('#summaryBox').textContent = 'Unexpected: '+(err?.message||String(err)); }
+}
+
+async function loadMeta(){
+try{
+const r = await fetch('/api/ledger/meta',{cache:'no-store'}); const j = await r.json();
+if (!j.ok) return;
+const tSel = document.querySelector('#fTeam'); const lSel = document.querySelector('#fLeague');
+if (tSel){ tSel.innerHTML = '<option value="">All teams</option>' + (j.teams||[]).map(v=>'<option>'+v+'</option>').join(''); }
+if (lSel){ lSel.innerHTML = '<option value="">All leagues</option>' + (j.leagues||[]).map(v=>'<option>'+v+'</option>').join(''); }
+}catch(e){}
+}
+
+async function loadLedgerFiltered(){
+const team = $('#fTeam')?.value || ''; const league = $('#fLeague')?.value || '';
+const from = $('#fFrom')?.value || ''; const to = $('#fTo')?.value || '';
+const qs = new URLSearchParams(); if (team) qs.set('team',team); if (league) qs.set('league',league);
+if (from) qs.set('from',from); if (to) qs.set('to',to);
+const box = $('#tableBox'); box.textContent = 'Loading…';
+try{
+const url = qs.toString() ? '/api/ledger/list.filter?'+qs.toString() : '/api/ledger/list';
+const r = await fetch(url,{cache:'no-store'}); const j = await r.json();
+if (!j.ok){ box.textContent = 'Failed: '+(j.error||'unknown'); return; }
 const rows = j.entries || [];
-if (!rows.length){ $('#tableBox').textContent = 'No entries yet.'; return; }
+if (!rows.length){ box.textContent = 'No entries for these filters.'; return; }
 let html = '<table><thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Category</th><th>Team</th><th>League</th><th>Note</th><th>Actions</th></tr></thead><tbody>';
 for (const e of rows){
 html += '<tr>'+
@@ -289,56 +467,37 @@ html += '<tr>'+
 '</tr>';
 }
 html += '</tbody></table>';
-$('#tableBox').innerHTML = html;
-window.__ledgerEntries = rows;
+box.innerHTML = html;
+}catch(e){ box.textContent = 'Network error: '+(e?.message||String(e)); }
 }
 
 async function deleteEntry(id){
 if(!confirm('Delete this entry?')) return;
+try{
 const r = await fetch('/api/ledger/delete?id='+encodeURIComponent(id), {method:'DELETE'});
 const j = await r.json();
 if (!j.ok){ alert('Delete failed: ' + (j.error||'unknown')); return; }
-loadLedger(); loadSummary();
-}
-
-async function loadSummary(){
-const days = Number($('#range').value || 30);
-$('#rangeSpan').textContent = days;
-const r = await fetch('/api/ledger/summary?range='+days);
-const j = await r.json();
-if (!j.ok){ $('#summaryBox').textContent = 'Failed to load summary'; return; }
-const t = j.totals || {income:0,expense:0,net:0};
-let html = '<div><b>Totals</b> — Income: $'+fmt(t.income)+' · Expense: $'+fmt(t.expense)+' · Net: $'+fmt(t.net)+'</div>';
-const byCat = j.byCategory||{};
-const byTL = j.byTeamLeague||{};
-html += '<div style="height:10px"></div><div><b>By Category</b></div>';
-if (Object.keys(byCat).length===0) html += '<div class="small">none</div>';
-else {
-html += '<table><thead><tr><th>Category</th><th class="right">Income</th><th class="right">Expense</th></tr></thead><tbody>';
-for (const k of Object.keys(byCat)){
-html += '<tr><td>'+k+'</td><td class="right">$'+fmt(byCat[k].income||0)+'</td><td class="right">$'+fmt(byCat[k].expense||0)+'</td></tr>';
-}
-html += '</tbody></table>';
-}
-html += '<div style="height:10px"></div><div><b>By Team | League</b></div>';
-if (Object.keys(byTL).length===0) html += '<div class="small">none</div>';
-else {
-html += '<table><thead><tr><th>Team | League</th><th class="right">Income</th><th class="right">Expense</th></tr></thead><tbody>';
-for (const k of Object.keys(byTL)){
-html += '<tr><td>'+k+'</td><td class="right">$'+fmt(byTL[k].income||0)+'</td><td class="right">$'+fmt(byTL[k].expense||0)+'</td></tr>';
-}
-html += '</tbody></table>';
-}
-$('#summaryBox').innerHTML = html;
+loadMeta(); loadLedgerFiltered(); loadSummary();
+}catch(e){ alert('Network error: '+(e?.message||String(e))); }
 }
 
 document.addEventListener('click', (e)=>{
 if (e.target && e.target.id==='addBtn') addEntry();
 if (e.target && e.target.id==='sumBtn') loadSummary();
+if (e.target && e.target.id==='fApply') loadLedgerFiltered();
+if (e.target && e.target.id==='fClear'){
+$('#fTeam').value=''; $('#fLeague').value=''; $('#fFrom').value=''; $('#fTo').value='';
+loadLedgerFiltered();
+}
+});
+document.addEventListener('keydown', (e)=>{
+if (e.key==='Enter' && document.activeElement && document.activeElement.tagName!=='TEXTAREA'){
+e.preventDefault(); addEntry();
+}
 });
 window.addEventListener('load', ()=>{
 $('#date').value = (new Date()).toISOString().slice(0,10);
-loadLedger(); loadSummary();
+loadMeta(); loadLedgerFiltered(); loadSummary();
 });
 </script>
 </body></html>`;
@@ -349,20 +508,20 @@ const server = http.createServer(async (req, res) => {
 try{
 const u = new URL(req.url, 'http://' + (req.headers.host || 'localhost'));
 
-// CORS (safe for same-origin use; extend if embedding elsewhere)
+// CORS (ok for same-origin; widen if embedding elsewhere)
 res.setHeader('Access-Control-Allow-Origin', '*');
 res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
 res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 if (req.method === 'OPTIONS') return send(res,204,{},'');
 
 if (req.method === 'GET' && u.pathname === '/health') return text(res,200,'OK');
+if (req.method === 'GET' && u.pathname === '/') return send(res,200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}, uiHTML());
 
-if (req.method === 'GET' && u.pathname === '/') {
-return send(res,200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}, uiHTML());
-}
-
+// API
 if (req.method === 'POST' && u.pathname === '/api/ledger/add') return handleAdd(req,res);
 if (req.method === 'GET' && u.pathname === '/api/ledger/list') return listEntries(req,res);
+if (req.method === 'GET' && u.pathname === '/api/ledger/list.filter')return listEntriesFiltered(req,res,u);
+if (req.method === 'GET' && u.pathname === '/api/ledger/meta') return meta(req,res);
 if (req.method === 'GET' && u.pathname === '/api/ledger/summary') return summarize(req,res,u);
 if (req.method === 'GET' && u.pathname === '/api/ledger/export.csv') return exportCSV(req,res);
 if (req.method === 'DELETE' && u.pathname === '/api/ledger/delete') return deleteOne(req,res,u);
@@ -374,4 +533,11 @@ return text(res,500,'Server error');
 }
 });
 
-server.listen(PORT, ()=>{ ensureStore(); console.log('💵 Hey Bori Cash Flow listening on '+PORT); });
+server.listen(PORT, ()=>{
+try{
+ensureStore();
+console.log('💵 Hey Bori Cash Flow listening on '+PORT+' | DATA_DIR='+DATA_DIR);
+}catch(e){
+console.error('Startup store error', e);
+}
+});
