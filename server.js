@@ -1,9 +1,9 @@
-// server.js — Hey Bori Cash Flow™ (English-only text in UI messages)
+// server.js — Hey Bori Cash Flow™ (English-only UI)
 // Zero dependencies. Render-ready. Works with ledger.js.
 //
 // ENV:
 // PORT (injected by Render)
-// DATA_DIR=/data (required for persistence; mount a disk at /data)
+// DATA_DIR=/data (for persistence; mount a disk at /data)
 // FORCE_DOMAIN=cash.heybori.co (optional; enable after TLS on custom domain)
 // CSP_ANCESTORS="https://heybori.co https://www.heybori.co https://chat.heybori.co https://cash.heybori.co" (optional)
 
@@ -66,7 +66,7 @@ main{padding:12px 14px;display:grid;gap:12px}
 label{font:700 12px system-ui;display:block;margin-bottom:6px;color:#223}
 .row{display:flex;gap:8px;flex-wrap:wrap}
 input,select{padding:10px;border:1px solid #ddd;border-radius:10px;font:600 14px system-ui}
-input[type="number"]{max-width:140px}
+input[type="number"],input[type="text"][inputmode="decimal"]{max-width:160px}
 button.primary{background:#0a3a78;color:#fff;border:1px solid #0c2a55;border-radius:10px;padding:10px 14px;font:800 14px system-ui;cursor:pointer}
 button{cursor:pointer}
 .table{width:100%;border-collapse:collapse}
@@ -100,14 +100,38 @@ main{padding:10px}
 <div class="card">
 <label>Add transaction</label>
 <div class="row">
-<select id="type">
+<select id="type" title="Type">
 <option value="income">Income</option>
 <option value="expense">Expense</option>
 </select>
-<input id="amount" type="text" inputmode="decimal" placeholder="Amount (e.g. 10 or $10)">
-<input id="category" placeholder="Category (e.g., fundraiser, uniforms)">
-<input id="note" placeholder="Note (optional)">
-<input id="date" type="date">
+
+<input id="amount" type="text" inputmode="decimal" placeholder="Amount (e.g. 10 or $10)" title="Amount">
+
+<!-- Category dropdown with income/expense groups and Custom -->
+<select id="category" title="Category">
+<option value="">Select category</option>
+<optgroup label="Income">
+<option>Donations</option>
+<option>Sponsorships</option>
+<option>Fundraisers</option>
+<option>Concessions</option>
+<option>Ticket Sales</option>
+<option>Registration Fees</option>
+</optgroup>
+<optgroup label="Expenses">
+<option>Uniforms</option>
+<option>Referee Fees</option>
+<option>Travel</option>
+<option>Tournament Fees</option>
+<option>Equipment</option>
+<option>Facility Rentals</option>
+<option>Miscellaneous</option>
+</optgroup>
+<option value="Custom">Custom</option>
+</select>
+
+<input id="note" placeholder="Note (optional)" title="Note">
+<input id="date" type="date" title="Date">
 <button id="btnAdd" class="primary">Add</button>
 </div>
 <div id="msg" class="small notice"></div>
@@ -160,6 +184,18 @@ tbody.appendChild(tr);
 }catch(e){ console.warn('list failed', e); }
 }
 
+// Optional: nudge category list to top group based on type (visual aid)
+document.getElementById('type').addEventListener('change', ()=>{
+const type = document.getElementById('type').value;
+const cat = document.getElementById('category');
+// If current selection doesn't match group, reset to placeholder
+const incomeSet = new Set(['Donations','Sponsorships','Fundraisers','Concessions','Ticket Sales','Registration Fees']);
+const expenseSet = new Set(['Uniforms','Referee Fees','Travel','Tournament Fees','Equipment','Facility Rentals','Miscellaneous']);
+const v = cat.value;
+if (type === 'income' && (expenseSet.has(v) || v === '')) { cat.value=''; }
+if (type === 'expense' && (incomeSet.has(v) || v === '')) { cat.value=''; }
+});
+
 document.getElementById('btnAdd').addEventListener('click', async ()=>{
 const type = (document.getElementById('type').value || '').trim();
 
@@ -167,13 +203,19 @@ const type = (document.getElementById('type').value || '').trim();
 const amtRaw = (document.getElementById('amount').value || '').toString().replace(/[^0-9.\-]/g,'');
 const amount = parseFloat(amtRaw);
 
-const category = (document.getElementById('category').value || '').trim();
+let category = (document.getElementById('category').value || '').trim();
 const note = (document.getElementById('note').value || '').trim();
 const dateEl = (document.getElementById('date').value || '').trim();
 const date = dateEl ? new Date(dateEl + 'T12:00:00Z').toISOString() : null;
 
 const msg = document.getElementById('msg');
 msg.textContent = '';
+
+if (category === 'Custom') {
+const custom = prompt('Enter custom category:');
+if (custom && custom.trim()) category = custom.trim();
+else { msg.textContent = 'Category required'; return; }
+}
 
 if (!category) { msg.textContent = 'Category required'; return; }
 if (!isFinite(amount) || amount <= 0) { msg.textContent = 'Amount invalid — use 10.00'; return; }
