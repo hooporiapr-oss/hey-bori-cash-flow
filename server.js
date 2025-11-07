@@ -1,11 +1,11 @@
-// server.js — Hey Bori Cash Flow™ (English-only UI)
+// server.js — Hey Bori Cash Flow™ (multi-league/team/tournament)
 // Zero dependencies. Render-ready. Works with ledger.js.
 //
 // ENV:
 // PORT (injected by Render)
-// DATA_DIR=/data (for persistence; mount a disk at /data)
-// FORCE_DOMAIN=cash.heybori.co (optional; enable after TLS on custom domain)
-// CSP_ANCESTORS="https://heybori.co https://www.heybori.co https://chat.heybori.co https://cash.heybori.co" (optional)
+// DATA_DIR=/data (persistence; mount a disk at /data)
+// FORCE_DOMAIN=cash.heybori.co (optional; enable after TLS)
+// CSP_ANCESTORS="https://heybori.co https://chat.heybori.co https://cash.heybori.co" (optional)
 
 process.on('uncaughtException', e => console.error('[uncaughtException]', e));
 process.on('unhandledRejection', e => console.error('[unhandledRejection]', e));
@@ -66,7 +66,7 @@ main{padding:12px 14px;display:grid;gap:12px}
 label{font:700 12px system-ui;display:block;margin-bottom:6px;color:#223}
 .row{display:flex;gap:8px;flex-wrap:wrap}
 input,select{padding:10px;border:1px solid #ddd;border-radius:10px;font:600 14px system-ui}
-input[type="number"],input[type="text"][inputmode="decimal"]{max-width:160px}
+input[type="text"][inputmode="decimal"]{max-width:160px}
 button.primary{background:#0a3a78;color:#fff;border:1px solid #0c2a55;border-radius:10px;padding:10px 14px;font:800 14px system-ui;cursor:pointer}
 button{cursor:pointer}
 .table{width:100%;border-collapse:collapse}
@@ -78,10 +78,9 @@ button{cursor:pointer}
 footer{padding:14px 16px;color:#fff;opacity:.92}
 .small{font:600 12px/1.4 system-ui}
 .notice{margin-top:6px;color:#0a3a78;min-height:18px}
-@media (max-width:480px){
-header{padding:12px}
-main{padding:10px}
-}
+.filters{display:grid;gap:8px;grid-template-columns:1fr 1fr}
+@media (max-width:640px){.filters{grid-template-columns:1fr}}
+@media (max-width:480px){header{padding:12px} main{padding:10px}}
 </style>
 </head>
 <body>
@@ -97,6 +96,28 @@ main{padding:10px}
 </header>
 
 <main>
+<!-- Context filters (apply to KPIs, table, and as defaults for new entries) -->
+<div class="card">
+<label>Context & Filters</label>
+<div class="filters">
+<input id="program" placeholder="Program (optional)">
+<input id="season" placeholder="Season (e.g., 2024-2025)">
+<select id="gender">
+<option value="">Gender (any)</option>
+<option>Male</option>
+<option>Female</option>
+<option>Coed</option>
+</select>
+<input id="leagues" placeholder="Leagues (comma-separated, e.g. PRBL, Summer)">
+<input id="teams" placeholder="Teams (comma-separated, e.g. 12U Blue, 14U Girls)">
+<input id="tournaments" placeholder="Tournaments (comma-separated)">
+</div>
+<div style="margin-top:8px">
+<button id="btnApply" class="primary">Apply Filters</button>
+<span id="fmsg" class="small" style="margin-left:8px;color:#0a3a78"></span>
+</div>
+</div>
+
 <div class="card">
 <label>Add transaction</label>
 <div class="row">
@@ -146,7 +167,7 @@ main{padding:10px}
 <div class="card">
 <label>Recent transactions</label>
 <table class="table" id="tbl">
-<thead><tr><th>Date</th><th>Type</th><th>Category</th><th>Amount</th><th>Note</th></tr></thead>
+<thead><tr><th>Date</th><th>Type</th><th>Category</th><th>Amount</th><th>Leagues</th><th>Teams</th><th>Tournaments</th><th>Note</th></tr></thead>
 <tbody></tbody>
 </table>
 </div>
@@ -156,44 +177,57 @@ main{padding:10px}
 </section>
 
 <script>
+function getFilters(){
+return {
+program: (document.getElementById('program').value||'').trim(),
+season: (document.getElementById('season').value||'').trim(),
+gender: (document.getElementById('gender').value||'').trim(),
+leagues: (document.getElementById('leagues').value||'').trim(),
+teams: (document.getElementById('teams').value||'').trim(),
+tournaments: (document.getElementById('tournaments').value||'').trim()
+};
+}
+function q(params){
+const p = new URLSearchParams();
+for (const [k,v] of Object.entries(params)) if (v) p.set(k, v);
+return p.toString() ? ('?'+p.toString()) : '';
+}
 async function api(path, opt){ const r=await fetch(path, opt); if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); }
 function fmt(n){ return '$'+(Number(n||0)).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function td(s){ const c=document.createElement('td'); c.textContent=s; return c; }
 
 async function refresh(){
+const flt = getFilters();
+
 try{
-const s = await api('/api/ledger/summary?range=30');
+const s = await api('/api/ledger/summary'+q({range:30, ...flt}));
 document.getElementById('kIncome').textContent = fmt(s.income||0);
 document.getElementById('kExpense').textContent = fmt(s.expense||0);
 document.getElementById('kNet').textContent = fmt(s.net||0);
 }catch(e){ console.warn('summary failed', e); }
 
 try{
-const list = await api('/api/ledger/list');
+const list = await api('/api/ledger/list'+q(flt));
 const tbody = document.querySelector('#tbl tbody');
 tbody.innerHTML='';
-(list.rows||[]).slice(-50).reverse().forEach(r=>{
+(list.rows||[]).slice(-100).reverse().forEach(r=>{
 const tr=document.createElement('tr');
 tr.appendChild(td(new Date(r.date).toLocaleDateString()));
 tr.appendChild(td(r.type));
 tr.appendChild(td(r.category||''));
 tr.appendChild(td(fmt(r.amount)));
+tr.appendChild(td((r.leagues||[]).join(', ')));
+tr.appendChild(td((r.teams||[]).join(', ')));
+tr.appendChild(td((r.tournaments||[]).join(', ')));
 tr.appendChild(td(r.note||''));
 tbody.appendChild(tr);
 });
 }catch(e){ console.warn('list failed', e); }
 }
 
-// Optional: nudge category list to top group based on type (visual aid)
-document.getElementById('type').addEventListener('change', ()=>{
-const type = document.getElementById('type').value;
-const cat = document.getElementById('category');
-// If current selection doesn't match group, reset to placeholder
-const incomeSet = new Set(['Donations','Sponsorships','Fundraisers','Concessions','Ticket Sales','Registration Fees']);
-const expenseSet = new Set(['Uniforms','Referee Fees','Travel','Tournament Fees','Equipment','Facility Rentals','Miscellaneous']);
-const v = cat.value;
-if (type === 'income' && (expenseSet.has(v) || v === '')) { cat.value=''; }
-if (type === 'expense' && (incomeSet.has(v) || v === '')) { cat.value=''; }
+document.getElementById('btnApply').addEventListener('click', ()=>{
+document.getElementById('fmsg').textContent = 'Filters applied';
+refresh();
 });
 
 document.getElementById('btnAdd').addEventListener('click', async ()=>{
@@ -208,6 +242,9 @@ const note = (document.getElementById('note').value || '').trim();
 const dateEl = (document.getElementById('date').value || '').trim();
 const date = dateEl ? new Date(dateEl + 'T12:00:00Z').toISOString() : null;
 
+// Use current filters as defaults for new entry scope
+const { program, season, gender, leagues, teams, tournaments } = getFilters();
+
 const msg = document.getElementById('msg');
 msg.textContent = '';
 
@@ -217,14 +254,13 @@ if (custom && custom.trim()) category = custom.trim();
 else { msg.textContent = 'Category required'; return; }
 }
 
-if (!category) { msg.textContent = 'Category required'; return; }
 if (!isFinite(amount) || amount <= 0) { msg.textContent = 'Amount invalid — use 10.00'; return; }
 
 try{
 const r = await fetch('/api/ledger/add', {
 method: 'POST',
 headers: {'content-type':'application/json'},
-body: JSON.stringify({ type, amount, category, note, date })
+body: JSON.stringify({ type, amount, category, note, date, program, season, gender, leagues, teams, tournaments })
 });
 const data = await r.json().catch(()=>({ok:false, error:'Invalid server response'}));
 
@@ -245,7 +281,8 @@ msg.textContent = 'Error: ' + (e.message || 'network');
 });
 
 document.getElementById('btnExport').addEventListener('click', ()=>{
-window.location.href='/api/ledger/export.csv';
+const flt = getFilters();
+window.location.href='/api/ledger/export.csv'+q(flt);
 });
 
 refresh();
@@ -270,6 +307,22 @@ if (req.method === 'GET' && u.pathname === '/') {
 return html(res, PAGE);
 }
 
+// Helper to extract filters from query
+function getQueryFilters(urlObj){
+const g = k => {
+const v = urlObj.searchParams.get(k);
+return v == null ? '' : String(v);
+};
+return {
+program: g('program'),
+season: g('season'),
+gender: g('gender'),
+leagues: g('leagues'), // comma-separated supported
+teams: g('teams'), // comma-separated supported
+tournaments: g('tournaments') // comma-separated supported
+};
+}
+
 // --- API: add entry (robust parse & validate) ---
 if (req.method === 'POST' && u.pathname === '/api/ledger/add') {
 let body = '';
@@ -279,23 +332,26 @@ try {
 const j = JSON.parse(body || '{}');
 
 const type = (j.type === 'expense') ? 'expense' : 'income';
-
-// Accept "10", "10.00", "$10"
 const amount = parseFloat(String(j.amount ?? '').replace(/[^0-9.\-]/g, ''));
 const category = String(j.category ?? '').trim();
 const note = String(j.note ?? '').trim();
 
-// Date: ISO, "YYYY-MM-DD", or now
 let d = j.date ? new Date(j.date) : new Date();
-if (String(j.date || '').match(/^\d{4}-\d{2}-\d{2}$/)) {
-d = new Date(String(j.date) + 'T12:00:00Z');
-}
+if (String(j.date || '').match(/^\d{4}-\d{2}-\d{2}$/)) d = new Date(String(j.date) + 'T12:00:00Z');
 if (isNaN(d.getTime())) d = new Date();
 
 if (!isFinite(amount) || amount <= 0) throw new Error('Amount must be a number greater than 0');
 if (!category) throw new Error('Category is required');
 
-const entry = ledger.add({ type, amount, category, note, date: d });
+const entry = ledger.add({
+type, amount, category, note, date: d,
+program: String(j.program||'').trim(),
+season: String(j.season||'').trim(),
+gender: String(j.gender||'').trim(),
+leagues: j.leagues || '',
+teams: j.teams || '',
+tournaments: j.tournaments || ''
+});
 return json(res, 200, { ok: true, entry });
 } catch (e) {
 return json(res, 400, { ok: false, error: String(e.message || e) });
@@ -304,26 +360,32 @@ return json(res, 400, { ok: false, error: String(e.message || e) });
 return;
 }
 
-// List
+// List (supports filters)
 if (req.method === 'GET' && u.pathname === '/api/ledger/list') {
-try { return json(res, 200, { ok:true, rows: ledger.list() }); }
-catch(e){ return json(res, 500, { ok:false, error:String(e) }); }
-}
-
-// Summary
-if (req.method === 'GET' && u.pathname === '/api/ledger/summary') {
 try {
-const days = Math.max(1, Math.min(365, Number(u.searchParams.get('range')||30)));
-return json(res, 200, ledger.summary(days));
+const flt = getQueryFilters(u);
+return json(res, 200, { ok:true, rows: ledger.list(flt) });
 } catch(e){
 return json(res, 500, { ok:false, error:String(e) });
 }
 }
 
-// Export CSV
+// Summary (supports filters + range)
+if (req.method === 'GET' && u.pathname === '/api/ledger/summary') {
+try {
+const days = Math.max(1, Math.min(365, Number(u.searchParams.get('range')||30)));
+const flt = getQueryFilters(u);
+return json(res, 200, ledger.summary(days, flt));
+} catch(e){
+return json(res, 500, { ok:false, error:String(e) });
+}
+}
+
+// Export CSV (supports filters)
 if (req.method === 'GET' && u.pathname === '/api/ledger/export.csv') {
 try{
-const csv = ledger.toCSV();
+const flt = getQueryFilters(u);
+const csv = ledger.toCSV(flt);
 res.writeHead(200, {
 'Content-Type':'text/csv; charset=utf-8',
 'Content-Disposition':'attachment; filename="ledger.csv"',
