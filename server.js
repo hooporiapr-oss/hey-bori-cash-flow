@@ -1,4 +1,4 @@
-// Hey Bori Cash Flow — Pro + Multi-PIN + Sign Out
+// Hey Bori Cash Flow — Pro + Multi-PIN + Sign Out + "Signed in as" Tag
 //
 // Auth modes (via env):
 // - MULTI: COACH_PINS="pin:Program,otherpin:Other Program" -> each PIN scoped to its Program
@@ -358,7 +358,7 @@ return `<!doctype html>
 *{box-sizing:border-box}
 body{margin:0;background:linear-gradient(180deg,#0b0f14,#0e1116);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Inter,Roboto,Arial,sans-serif}
 header{padding:16px;border-bottom:1px solid var(--line);background:#0c1016;position:sticky;top:0;z-index:10}
-h1{margin:0;font-size:20px;position:relative}
+h1{margin:0;font-size:20px;position:relative;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .sub{color:var(--muted);font-size:12px;margin-top:4px}
 main{max-width:980px;margin:16px auto;padding:0 12px 100px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin:12px 0}
@@ -377,10 +377,11 @@ th{color:#c8d3e6;font-weight:600}
 .right{text-align:right}
 canvas{width:100%;max-width:680px;height:280px;background:#0d1220;border:1px solid #233040;border-radius:10px}
 .hidden{display:none}
-.pill{display:inline-block;padding:2px 8px;border:1px solid #29415f;border-radius:999px;background:#0b1320;color:#bcd3f0;margin-left:8px;font-size:12px}
-#signout{position:absolute;right:0;top:0;transform:translateY(-2px);}
+.pill{display:inline-block;padding:2px 8px;border:1px solid #29415f;border-radius:999px;background:#0b1320;color:#bcd3f0;font-size:12px}
+#signedAs{color:#9fc1ff;font-size:12px}
 #signout button{padding:6px 10px;border-radius:8px;border:1px solid #2a3b55;background:#0d1320;color:#cfe2ff}
 #signout button:hover{border-color:#3c5d8a}
+.hdr-right{margin-left:auto;display:flex;gap:10px;align-items:center}
 </style>
 </head>
 <body>
@@ -388,7 +389,10 @@ canvas{width:100%;max-width:680px;height:280px;background:#0d1220;border:1px sol
 <h1>
 Hey Bori Cash Flow
 <span id="scopePill" class="pill hidden"></span>
+<span class="hdr-right">
+<span id="signedAs" class="hidden"></span>
 <span id="signout" class="hidden"><button id="signoutBtn" title="Sign out">Sign Out</button></span>
+</span>
 </h1>
 <div class="sub">Simple • Fast • For youth teams & leagues</div>
 </header>
@@ -512,13 +516,18 @@ async function fetchAuthed(url, opts={}){ opts.headers = authHeaders(opts.header
 function show(el, vis){ el.classList.toggle('hidden', !vis); }
 function showApp(vis){
 ['chartsCard','addCard','summaryCard','ledgerCard'].forEach(id=> show($('#'+id), vis));
-show($('#signout'), vis && SESSION.authRequired); // show Sign Out only after login, when auth is enabled
+const showSecureBits = vis && SESSION.authRequired;
+show($('#signout'), showSecureBits);
+// "Signed in as" appears only for multi-PIN (programScope present)
+show($('#signedAs'), showSecureBits && !!SESSION.programScope);
 }
-function setScopeBadge(scope){
+function setHeaderBadges(scope){
 const pill = $('#scopePill');
 if (scope){
 pill.textContent = 'Program: '+scope;
 show(pill, true);
+const s = $('#signedAs');
+if (s){ s.textContent = 'Signed in as: ' + scope; }
 }else{
 show(pill, false);
 }
@@ -541,10 +550,7 @@ $('#csvLink').href = '/api/ledger/export.csv' + (qs.toString()?('?'+qs.toString(
 
 // ---- Sign Out ----
 function signOut(){
-try{
-localStorage.removeItem('hb_token');
-}catch(_){}
-// return to login immediately
+try{ localStorage.removeItem('hb_token'); }catch(_){}
 window.location.reload();
 }
 $('#signoutBtn')?.addEventListener('click', signOut);
@@ -555,15 +561,13 @@ try{
 const r = await fetchAuthed('/api/session',{cache:'no-store'});
 const j = await r.json();
 SESSION = {authRequired:j.authRequired, mode:j.mode, programScope:j.programScope};
-setScopeBadge(SESSION.programScope);
+setHeaderBadges(SESSION.programScope);
 if (!SESSION.authRequired){ show($('#loginCard'), false); showApp(true); init(); return; }
-if (TOKEN && SESSION.programScope !== null){
+if (TOKEN && (SESSION.programScope !== null || SESSION.mode==='single')){
 show($('#loginCard'), false); showApp(true); init(); return;
 }
-// needs login
 show($('#loginCard'), true); showApp(false);
 }catch(e){
-// fallback: show app open
 show($('#loginCard'), false); showApp(true); init();
 }
 }
@@ -577,7 +581,7 @@ const j = await r.json();
 if (!j.ok){ $('#loginStatus').textContent = 'Invalid PIN'; return; }
 if (j.token){ TOKEN = j.token; localStorage.setItem('hb_token', TOKEN); }
 SESSION = {authRequired:true, mode:j.mode, programScope:j.program||null};
-setScopeBadge(SESSION.programScope);
+setHeaderBadges(SESSION.programScope);
 $('#loginStatus').textContent = 'Unlocked ✓';
 show($('#loginCard'), false); showApp(true); init();
 }catch(e){
