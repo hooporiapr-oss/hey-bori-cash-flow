@@ -1,6 +1,6 @@
-// Hey Bori Cash Flow — Pro + Multi-PIN Programs (self-healing, filters, charts)
+// Hey Bori Cash Flow — Pro + Multi-PIN + Sign Out
 //
-// Auth modes (runtime, via env):
+// Auth modes (via env):
 // - MULTI: COACH_PINS="pin:Program,otherpin:Other Program" -> each PIN scoped to its Program
 // - SINGLE: COACH_PIN="1628" -> one PIN, no Program scope
 // - NONE: (no env) -> open app
@@ -32,7 +32,7 @@ const PORT = Number(process.env.PORT || 10000);
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const LEDGER_FN = path.join(DATA_DIR, 'ledger.json');
 
-const ENV_PINS = (process.env.COACH_PINS || '').trim(); // "pin:Program,otherpin:Other Program"
+const ENV_PINS = (process.env.COACH_PINS || '').trim(); // "pin:Program,other:Prog 2"
 const SINGLE_PIN = (process.env.COACH_PIN || '').trim();
 
 function sha256(s){ return crypto.createHash('sha256').update(String(s)).digest('hex'); }
@@ -40,18 +40,17 @@ function sha256(s){ return crypto.createHash('sha256').update(String(s)).digest(
 // ---- Auth mode detection ----
 let AUTH_MODE = 'none'; // 'none' | 'single' | 'multi'
 let SINGLE_HASH = null;
-let PIN_MAP = []; // [{pin, program, hash}], for multi
+let PIN_MAP = []; // [{pin, program, hash}]
 let HASH_TO_PROGRAM = new Map();
 
 if (ENV_PINS){
 AUTH_MODE = 'multi';
-// Parse COACH_PINS (comma/newline separated)
 const parts = ENV_PINS.split(/[,;\n\r]+/).map(s=>s.trim()).filter(Boolean);
 for (const p of parts){
-const idx = p.indexOf(':');
-if (idx>0){
-const pin = p.slice(0,idx).trim();
-const program = p.slice(idx+1).trim();
+const i = p.indexOf(':');
+if (i>0){
+const pin = p.slice(0,i).trim();
+const program = p.slice(i+1).trim();
 if(pin){
 const hash = sha256(pin);
 PIN_MAP.push({pin, program, hash});
@@ -59,12 +58,10 @@ HASH_TO_PROGRAM.set(hash, program);
 }
 }
 }
-if (PIN_MAP.length === 0) AUTH_MODE = 'none';
+if (!PIN_MAP.length) AUTH_MODE = 'none';
 }else if (SINGLE_PIN){
 AUTH_MODE = 'single';
 SINGLE_HASH = sha256(SINGLE_PIN);
-}else{
-AUTH_MODE = 'none';
 }
 
 function getAuth(req){
@@ -72,9 +69,7 @@ function getAuth(req){
 if (AUTH_MODE === 'none') return {ok:true, programScope:null};
 const token = String(req.headers['x-auth'] || '').trim();
 if (!token) return {ok:false, programScope:null};
-if (AUTH_MODE === 'single'){
-return {ok: token === SINGLE_HASH, programScope:null};
-}
+if (AUTH_MODE === 'single') return {ok: token===SINGLE_HASH, programScope:null};
 // multi
 if (HASH_TO_PROGRAM.has(token)) return {ok:true, programScope: HASH_TO_PROGRAM.get(token)};
 return {ok:false, programScope:null};
@@ -206,7 +201,6 @@ if (!['income','expense'].includes(type)) return json(res,400,{ok:false,error:'t
 const amount = toNumber(body.amount);
 if (isNaN(amount) || amount <= 0) return json(res,400,{ok:false,error:'amount must be a positive number'});
 
-// Enforce program scope in MULTI mode: override program to scoped value
 const program = a.programScope ? a.programScope : (body.program||'').trim();
 
 const entry = {
@@ -364,7 +358,7 @@ return `<!doctype html>
 *{box-sizing:border-box}
 body{margin:0;background:linear-gradient(180deg,#0b0f14,#0e1116);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Inter,Roboto,Arial,sans-serif}
 header{padding:16px;border-bottom:1px solid var(--line);background:#0c1016;position:sticky;top:0;z-index:10}
-h1{margin:0;font-size:20px}
+h1{margin:0;font-size:20px;position:relative}
 .sub{color:var(--muted);font-size:12px;margin-top:4px}
 main{max-width:980px;margin:16px auto;padding:0 12px 100px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin:12px 0}
@@ -375,6 +369,7 @@ button{cursor:pointer}
 .row{display:flex;gap:8px;flex-wrap:wrap}
 .col{flex:1;min-width:160px}
 .primary{background:linear-gradient(90deg,var(--accent),var(--accent2));border:none;color:#071318;font-weight:700}
+.danger{background:#2b0f12;border:1px solid #71212a;color:#ffd3d6}
 .small{font-size:12px;color:var(--muted)}
 table{width:100%;border-collapse:collapse;margin-top:8px}
 th,td{border-bottom:1px solid var(--line);padding:8px 6px;font-size:13px;text-align:left;vertical-align:top}
@@ -383,22 +378,29 @@ th{color:#c8d3e6;font-weight:600}
 canvas{width:100%;max-width:680px;height:280px;background:#0d1220;border:1px solid #233040;border-radius:10px}
 .hidden{display:none}
 .pill{display:inline-block;padding:2px 8px;border:1px solid #29415f;border-radius:999px;background:#0b1320;color:#bcd3f0;margin-left:8px;font-size:12px}
+#signout{position:absolute;right:0;top:0;transform:translateY(-2px);}
+#signout button{padding:6px 10px;border-radius:8px;border:1px solid #2a3b55;background:#0d1320;color:#cfe2ff}
+#signout button:hover{border-color:#3c5d8a}
 </style>
 </head>
 <body>
 <header>
-<h1>Hey Bori Cash Flow <span id="scopePill" class="pill hidden"></span></h1>
+<h1>
+Hey Bori Cash Flow
+<span id="scopePill" class="pill hidden"></span>
+<span id="signout" class="hidden"><button id="signoutBtn" title="Sign out">Sign Out</button></span>
+</h1>
 <div class="sub">Simple • Fast • For youth teams & leagues</div>
 </header>
 
 <main>
-<!-- Login (shown only if auth required and no token) -->
+<!-- Login (only if auth required and no token) -->
 <section id="loginCard" class="card hidden">
-<h3 style="margin:0 0 8px 0">Coach Login</h3>
+<h3 style="margin:0 0 8px 0">Secure Coach Access</h3>
 <label>PIN</label>
 <input id="pin" type="password" placeholder="Enter PIN"/>
 <div class="row" style="margin-top:10px">
-<div class="col"><button id="loginBtn" class="primary">Unlock</button></div>
+<div class="col"><button id="loginBtn" class="primary">Sign In</button></div>
 <div class="col"><span id="loginStatus" class="small"></span></div>
 </div>
 </section>
@@ -510,6 +512,7 @@ async function fetchAuthed(url, opts={}){ opts.headers = authHeaders(opts.header
 function show(el, vis){ el.classList.toggle('hidden', !vis); }
 function showApp(vis){
 ['chartsCard','addCard','summaryCard','ledgerCard'].forEach(id=> show($('#'+id), vis));
+show($('#signout'), vis && SESSION.authRequired); // show Sign Out only after login, when auth is enabled
 }
 function setScopeBadge(scope){
 const pill = $('#scopePill');
@@ -535,6 +538,16 @@ const qs = new URLSearchParams();
 if (SESSION.programScope) qs.set('program', SESSION.programScope);
 $('#csvLink').href = '/api/ledger/export.csv' + (qs.toString()?('?'+qs.toString()):'');
 }
+
+// ---- Sign Out ----
+function signOut(){
+try{
+localStorage.removeItem('hb_token');
+}catch(_){}
+// return to login immediately
+window.location.reload();
+}
+$('#signoutBtn')?.addEventListener('click', signOut);
 
 // ---- Session bootstrap ----
 async function loadSession(){
