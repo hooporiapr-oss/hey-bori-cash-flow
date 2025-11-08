@@ -1,23 +1,5 @@
-// Hey Bori Cash Flow — Pro + Multi-PIN + Sign Out + "Signed in as" Tag
-//
-// Auth modes (via env):
-// - MULTI: COACH_PINS="pin:Program,otherpin:Other Program" -> each PIN scoped to its Program
-// - SINGLE: COACH_PIN="1628" -> one PIN, no Program scope
-// - NONE: (no env) -> open app
-//
-// Endpoints:
-// GET /health
-// GET / -> UI (login appears if auth required)
-// GET /api/session -> {authRequired, mode, programScope|null}
-// POST /api/login -> {pin} -> {ok, token, program|null, mode}
-// GET /api/ledger/meta -> {teams[], leagues[], categories[], programs[]}
-// POST /api/ledger/add -> {...}
-// GET /api/ledger/list -> ?from&to&team&league&program (program constrained by scope if any)
-// GET /api/ledger/summary -> ?range=30 (constrained by scope if any)
-// GET /api/ledger/export.csv -> filters; constrained by scope if any
-//
-// Render: Build=true, Start=node server.js, Env: DATA_DIR=/data (+ Disk)
-// Optional: COACH_PINS or COACH_PIN
+// Hey Bori Cash Flow — Multi-PIN / Single-PIN / Open
+// Privacy Banner, "Signed in as" tag, Charts, CSV export, Program-scoped data
 
 process.on('uncaughtException', e => console.error('[uncaughtException]', e));
 process.on('unhandledRejection', e => console.error('[unhandledRejection]', e));
@@ -32,12 +14,12 @@ const PORT = Number(process.env.PORT || 10000);
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const LEDGER_FN = path.join(DATA_DIR, 'ledger.json');
 
-const ENV_PINS = (process.env.COACH_PINS || '').trim(); // "pin:Program,other:Prog 2"
+const ENV_PINS = (process.env.COACH_PINS || '').trim(); // "1628:Hey Bori Main,4521:Bayamon"
 const SINGLE_PIN = (process.env.COACH_PIN || '').trim();
 
 function sha256(s){ return crypto.createHash('sha256').update(String(s)).digest('hex'); }
 
-// ---- Auth mode detection ----
+// ---- Auth mode ----
 let AUTH_MODE = 'none'; // 'none' | 'single' | 'multi'
 let SINGLE_HASH = null;
 let PIN_MAP = []; // [{pin, program, hash}]
@@ -47,7 +29,7 @@ if (ENV_PINS){
 AUTH_MODE = 'multi';
 const parts = ENV_PINS.split(/[,;\n\r]+/).map(s=>s.trim()).filter(Boolean);
 for (const p of parts){
-const i = p.indexOf(':');
+const i = p.indexOf(':'); // ASCII colon
 if (i>0){
 const pin = p.slice(0,i).trim();
 const program = p.slice(i+1).trim();
@@ -65,17 +47,15 @@ SINGLE_HASH = sha256(SINGLE_PIN);
 }
 
 function getAuth(req){
-// Returns {ok:boolean, programScope:null|string}
 if (AUTH_MODE === 'none') return {ok:true, programScope:null};
 const token = String(req.headers['x-auth'] || '').trim();
 if (!token) return {ok:false, programScope:null};
 if (AUTH_MODE === 'single') return {ok: token===SINGLE_HASH, programScope:null};
-// multi
 if (HASH_TO_PROGRAM.has(token)) return {ok:true, programScope: HASH_TO_PROGRAM.get(token)};
 return {ok:false, programScope:null};
 }
 
-// ---------- storage (self-healing) ----------
+// ---- storage (self-healing) ----
 function ensureStore(){
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, {recursive:true});
 if (!fs.existsSync(LEDGER_FN)){
@@ -103,7 +83,7 @@ if (!Array.isArray(db.entries)) db.entries = [];
 fs.writeFileSync(LEDGER_FN, JSON.stringify(db, null, 2));
 }
 
-// ---------- utils ----------
+// ---- utils ----
 function send(res, code, headers, body){ res.writeHead(code, headers); res.end(body); }
 function text(res, code, s){ send(res, code, {'Content-Type':'text/plain; charset=utf-8','Cache-Control':'no-store'}, String(s)); }
 function json(res, code, obj){ send(res, code, {'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}, JSON.stringify(obj)); }
@@ -137,7 +117,7 @@ return isFinite(t) && t>=fromT && t<=toT;
 return r;
 }
 
-// ---------- API ----------
+// ---- API ----
 async function sessionInfo(req, res){
 const a = getAuth(req);
 const authRequired = AUTH_MODE !== 'none';
@@ -147,10 +127,10 @@ return json(res,200,{ok:true, authRequired, mode, programScope: a.ok ? a.program
 
 async function login(req, res){
 if (AUTH_MODE === 'none') return json(res,200,{ok:true, token:null, program:null, mode:'none'});
-const body = await (new Promise(resolve=>{
+const body = await new Promise(resolve=>{
 let b=''; req.on('data',c=>{ b+=c; if (b.length>1e6) req.destroy(); });
 req.on('end', ()=>{ try{ resolve(JSON.parse(b||'{}')); }catch{ resolve({}); } });
-}));
+});
 const pin = String(body.pin||'').trim();
 if (!pin) return json(res,400,{ok:false,error:'pin required'});
 
@@ -159,8 +139,6 @@ const token = sha256(pin);
 if (token !== SINGLE_HASH) return json(res,403,{ok:false,error:'invalid pin'});
 return json(res,200,{ok:true, token, program:null, mode:'single'});
 }
-
-// multi
 const token = sha256(pin);
 const program = HASH_TO_PROGRAM.get(token);
 if (!program) return json(res,403,{ok:false,error:'invalid pin'});
@@ -342,7 +320,7 @@ return text(res,500,'CSV error: '+(e.message||e));
 }
 }
 
-// ---------- UI ----------
+// ---- UI ----
 function uiHTML(){
 return `<!doctype html>
 <html lang="en">
@@ -360,6 +338,17 @@ body{margin:0;background:linear-gradient(180deg,#0b0f14,#0e1116);color:var(--tex
 header{padding:16px;border-bottom:1px solid var(--line);background:#0c1016;position:sticky;top:0;z-index:10}
 h1{margin:0;font-size:20px;position:relative;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .sub{color:var(--muted);font-size:12px;margin-top:4px}
+#privacyBanner{
+display:none;
+background:#0b1320;
+border:1px solid #29415f;
+color:#bcd3f0;
+padding:10px 12px;
+border-radius:10px;
+margin:12px 12px 0 12px;
+font-size:13px;
+}
+#privacyBanner b{ color:#9fc1ff }
 main{max-width:980px;margin:16px auto;padding:0 12px 100px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin:12px 0}
 label{display:block;font-size:12px;color:var(--muted);margin:6px 0 4px}
@@ -369,7 +358,6 @@ button{cursor:pointer}
 .row{display:flex;gap:8px;flex-wrap:wrap}
 .col{flex:1;min-width:160px}
 .primary{background:linear-gradient(90deg,var(--accent),var(--accent2));border:none;color:#071318;font-weight:700}
-.danger{background:#2b0f12;border:1px solid #71212a;color:#ffd3d6}
 .small{font-size:12px;color:var(--muted)}
 table{width:100%;border-collapse:collapse;margin-top:8px}
 th,td{border-bottom:1px solid var(--line);padding:8px 6px;font-size:13px;text-align:left;vertical-align:top}
@@ -395,10 +383,11 @@ Hey Bori Cash Flow
 </span>
 </h1>
 <div class="sub">Simple • Fast • For youth teams & leagues</div>
+<div id="privacyBanner">🔒 Private Space</div>
 </header>
 
 <main>
-<!-- Login (only if auth required and no token) -->
+<!-- Login -->
 <section id="loginCard" class="card hidden">
 <h3 style="margin:0 0 8px 0">Secure Coach Access</h3>
 <label>PIN</label>
@@ -407,6 +396,7 @@ Hey Bori Cash Flow
 <div class="col"><button id="loginBtn" class="primary">Sign In</button></div>
 <div class="col"><span id="loginStatus" class="small"></span></div>
 </div>
+<div id="modeInfo" class="small" style="margin-top:6px;color:#8ca3c9"></div>
 </section>
 
 <!-- Charts -->
@@ -467,7 +457,7 @@ Hey Bori Cash Flow
 </div>
 <div class="col">
 <label>Program (optional)</label>
-<input id="program" list="programList" placeholder="e.g., Summer League 2025"/>
+<input id="program" list="programList" placeholder="e.g., Hey Bori Main"/>
 <datalist id="programList"></datalist>
 </div>
 </div>
@@ -475,9 +465,7 @@ Hey Bori Cash Flow
 <textarea id="note" rows="2" placeholder="e.g., 3 jerseys @ $20"></textarea>
 <div class="row" style="margin-top:10px">
 <div class="col"><button class="primary" id="addBtn">Add Entry</button></div>
-<div class="col">
-<a id="csvLink" class="small" href="/api/ledger/export.csv">Download CSV</a>
-</div>
+<div class="col"><a id="csvLink" class="small" href="/api/ledger/export.csv">Download CSV</a></div>
 <div class="col"><span class="small" id="status"></span></div>
 </div>
 </section>
@@ -486,18 +474,13 @@ Hey Bori Cash Flow
 <section id="summaryCard" class="card hidden">
 <h3 style="margin:0 0 8px 0">Summary (Last <span id="rangeSpan">30</span> days)</h3>
 <div class="row">
-<div class="col">
-<label>Range (days)</label>
-<input id="range" type="number" min="1" max="365" value="30"/>
-</div>
-<div class="col">
-<button id="sumBtn">Refresh Summary</button>
-</div>
+<div class="col"><label>Range (days)</label><input id="range" type="number" min="1" max="365" value="30"/></div>
+<div class="col"><button id="sumBtn">Refresh Summary</button></div>
 </div>
 <div id="summaryBox" class="small" style="margin-top:8px">Loading…</div>
 </section>
 
-<!-- Ledger + Per-Program mini totals -->
+<!-- Ledger -->
 <section id="ledgerCard" class="card hidden">
 <h3 style="margin:0 0 8px 0">Ledger</h3>
 <div id="miniTotals" class="small" style="margin-bottom:8px"></div>
@@ -513,14 +496,17 @@ let SESSION = {authRequired:false, mode:'none', programScope:null};
 function authHeaders(h={}){ if (TOKEN) h['x-auth'] = TOKEN; return h; }
 async function fetchAuthed(url, opts={}){ opts.headers = authHeaders(opts.headers || {}); return fetch(url, opts); }
 
-function show(el, vis){ el.classList.toggle('hidden', !vis); }
+// show() now also controls display for the privacy banner
+function show(el, vis){ el.classList.toggle('hidden', !vis); if (el.id==='privacyBanner') el.style.display = vis ? 'block' : 'none'; }
+
 function showApp(vis){
 ['chartsCard','addCard','summaryCard','ledgerCard'].forEach(id=> show($('#'+id), vis));
 const showSecureBits = vis && SESSION.authRequired;
 show($('#signout'), showSecureBits);
-// "Signed in as" appears only for multi-PIN (programScope present)
 show($('#signedAs'), showSecureBits && !!SESSION.programScope);
+updatePrivacyBanner(); // keep banner in sync
 }
+
 function setHeaderBadges(scope){
 const pill = $('#scopePill');
 if (scope){
@@ -531,7 +517,22 @@ if (s){ s.textContent = 'Signed in as: ' + scope; }
 }else{
 show(pill, false);
 }
+updatePrivacyBanner();
 }
+
+function updatePrivacyBanner(){
+const b = document.getElementById('privacyBanner');
+if (!b) return;
+const authed = (SESSION.authRequired && (TOKEN && (SESSION.mode==='single' || SESSION.programScope!==null)));
+if (!authed){ b.style.display='none'; return; }
+if (SESSION.mode==='multi' && SESSION.programScope){
+b.innerHTML = '🔒 Private Program Space — <b>'+SESSION.programScope+'</b>';
+}else{
+b.innerHTML = '🔒 Private Coach Space';
+}
+b.style.display='block';
+}
+
 function lockProgramIfScoped(){
 const input = $('#program'), dl = $('#programList');
 if (SESSION.programScope){
@@ -548,7 +549,6 @@ if (SESSION.programScope) qs.set('program', SESSION.programScope);
 $('#csvLink').href = '/api/ledger/export.csv' + (qs.toString()?('?'+qs.toString()):'');
 }
 
-// ---- Sign Out ----
 function signOut(){
 try{ localStorage.removeItem('hb_token'); }catch(_){}
 window.location.reload();
@@ -566,12 +566,14 @@ if (!SESSION.authRequired){ show($('#loginCard'), false); showApp(true); init();
 if (TOKEN && (SESSION.programScope !== null || SESSION.mode==='single')){
 show($('#loginCard'), false); showApp(true); init(); return;
 }
+$('#modeInfo').textContent = 'Mode: '+SESSION.mode+' — PINs required';
 show($('#loginCard'), true); showApp(false);
 }catch(e){
 show($('#loginCard'), false); showApp(true); init();
 }
 }
 
+// ---- Login ----
 $('#loginBtn')?.addEventListener('click', async ()=>{
 const pin = ($('#pin')?.value||'').trim();
 $('#loginStatus').textContent = 'Checking…';
@@ -627,7 +629,7 @@ e.preventDefault(); addEntry();
 }
 });
 
-// ---- Meta & Program autosuggest ----
+// ---- Meta ----
 async function loadMeta(){
 try{
 const r = await fetchAuthed('/api/ledger/meta',{cache:'no-store'});
@@ -803,6 +805,7 @@ await loadList();
 await loadSummary();
 await drawChart();
 updateCsvLink();
+updatePrivacyBanner();
 }
 function init(){
 $('#date').value = (new Date()).toISOString().slice(0,10);
@@ -813,12 +816,12 @@ window.addEventListener('load', loadSession);
 </body></html>`;
 }
 
-// ---------- server ----------
+// ---- server ----
 const server = http.createServer(async (req, res) => {
 try{
 const u = new URL(req.url, 'http://' + (req.headers.host || 'localhost'));
 
-// CORS (relaxed)
+// CORS
 res.setHeader('Access-Control-Allow-Origin', '*');
 res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
 res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Auth');
