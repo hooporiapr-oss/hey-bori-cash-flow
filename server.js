@@ -327,7 +327,7 @@ return `<!doctype html>
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Hey Bori Cash Flow</title>
+<title>Basketball Cash Flow</title>
 <style>
 :root{
 --bg:#0e1116; --card:#151a22; --line:#1f2733; --text:#e8edf4; --muted:#a7b1c2;
@@ -399,7 +399,7 @@ canvas{width:100%;max-width:680px;height:280px;background:#0d1220;border:1px sol
 <body>
 <header>
 <h1>
-Hey Bori Cash Flow
+Basketball Cash Flow
 <span id="scopePill" class="pill hidden"></span>
 <span class="hdr-right">
 <span id="signedAs" class="hidden"></span>
