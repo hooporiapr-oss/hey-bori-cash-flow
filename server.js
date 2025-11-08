@@ -1,5 +1,5 @@
 // Hey Bori Cash Flow — Multi-PIN / Single-PIN / Open
-// Privacy Banner, "Signed in as" tag, Charts, CSV export, Program-scoped data
+// Privacy Banner, "Signed in as", Help modal, Charts, CSV export, Program-scoped data
 
 process.on('uncaughtException', e => console.error('[uncaughtException]', e));
 process.on('unhandledRejection', e => console.error('[unhandledRejection]', e));
@@ -349,6 +349,30 @@ margin:12px 12px 0 12px;
 font-size:13px;
 }
 #privacyBanner b{ color:#9fc1ff }
+
+#helpLink{ display:inline-block; margin:8px 12px 0 12px; font-size:13px; color:#9fc1ff; cursor:pointer; }
+#helpLink:hover{ text-decoration:underline; }
+
+#helpModal{
+display:none; position:fixed; inset:0; z-index:9999;
+background:rgba(0,0,0,.55); padding:20px;
+}
+#helpCard{
+max-width:680px; margin:40px auto; background:#0c1016; color:#e8edf4;
+border:1px solid #29415f; border-radius:12px; padding:16px;
+box-shadow:0 10px 30px rgba(0,0,0,.35);
+}
+#helpCard h3{ margin:0 0 8px 0; font-size:18px }
+#helpCard p, #helpCard li{ color:#c9d7ea; font-size:14px; line-height:1.45 }
+#helpClose{
+float:right; border:1px solid #2a3b55; background:#0d1320; color:#cfe2ff;
+border-radius:8px; padding:6px 10px; cursor:pointer;
+}
+#helpFooter{ margin-top:10px; font-size:12px; color:#9db3d8 }
+kbd{
+background:#0d1320; border:1px solid #2a3b55; border-radius:6px; padding:1px 6px; font-family:ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
 main{max-width:980px;margin:16px auto;padding:0 12px 100px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin:12px 0}
 label{display:block;font-size:12px;color:var(--muted);margin:6px 0 4px}
@@ -384,6 +408,7 @@ Hey Bori Cash Flow
 </h1>
 <div class="sub">Simple • Fast • For youth teams & leagues</div>
 <div id="privacyBanner">🔒 Private Space</div>
+<div id="helpLink" role="button" tabindex="0" aria-controls="helpModal" aria-expanded="false">Need help?</div>
 </header>
 
 <main>
@@ -486,6 +511,33 @@ Hey Bori Cash Flow
 <div id="miniTotals" class="small" style="margin-bottom:8px"></div>
 <div id="tableBox">Loading…</div>
 </section>
+
+<!-- Help modal -->
+<div id="helpModal" aria-hidden="true" aria-label="Help dialog">
+<div id="helpCard">
+<button id="helpClose" aria-label="Close help">Close</button>
+<h3>How to use Hey Bori Cash Flow</h3>
+<p><b>Private Mode:</b> You’re in a locked space. Each coach/program sees only their own data.</p>
+<ol>
+<li><b>Sign In:</b> Enter your PIN and click <i>Sign In</i>. You’ll see <i>Program</i> in the header.</li>
+<li><b>Add an Entry:</b> Choose <i>Type</i> (Income/Expense), enter <i>Amount</i>, pick a <i>Category</i>, set <i>Date</i>, and optionally <i>Team</i>, <i>League</i>, <i>Note</i>. Click <i>Add Entry</i>.</li>
+<li><b>Summary & Charts:</b> Pick <i>Range (days)</i>, click <i>Refresh</i>/<i>Refresh Summary</i> to update totals, categories, and bar chart.</li>
+<li><b>Export CSV:</b> Click <i>Download CSV</i> to get your program’s data for spreadsheets or reports.</li>
+<li><b>Sign Out:</b> Use the <i>Sign Out</i> button in the top-right when you’re done.</li>
+</ol>
+<p><b>Tips</b></p>
+<ul>
+<li>Press <kbd>?</kbd> to open this help. Press <kbd>Esc</kbd> to close.</li>
+<li>Entries are scoped to your <b>Program</b> automatically in multi-PIN mode.</li>
+<li>Use consistent categories (Registration, Dues, Uniforms, etc.) for cleaner reports.</li>
+</ul>
+<div id="helpFooter">
+Need more help? Email us anytime at
+<a href="mailto:heyborico@gmail.com" target="_blank" rel="noopener noreferrer" style="color:#9fc1ff;text-decoration:underline;">heyborico@gmail.com</a>
+— Hey Bori Labs LLC.
+</div>
+</div>
+</div>
 </main>
 
 <script>
@@ -496,8 +548,8 @@ let SESSION = {authRequired:false, mode:'none', programScope:null};
 function authHeaders(h={}){ if (TOKEN) h['x-auth'] = TOKEN; return h; }
 async function fetchAuthed(url, opts={}){ opts.headers = authHeaders(opts.headers || {}); return fetch(url, opts); }
 
-// show() now also controls display for the privacy banner
-function show(el, vis){ el.classList.toggle('hidden', !vis); if (el.id==='privacyBanner') el.style.display = vis ? 'block' : 'none'; }
+// show() also controls display for the privacy banner
+function show(el, vis){ el.classList.toggle('hidden', !vis); if (el && el.id==='privacyBanner') el.style.display = vis ? 'block' : 'none'; }
 
 function showApp(vis){
 ['chartsCard','addCard','summaryCard','ledgerCard'].forEach(id=> show($('#'+id), vis));
@@ -532,6 +584,34 @@ b.innerHTML = '🔒 Private Coach Space';
 }
 b.style.display='block';
 }
+
+function openHelp(){
+const m = document.getElementById('helpModal');
+const l = document.getElementById('helpLink');
+if (!m) return;
+m.style.display = 'block';
+m.setAttribute('aria-hidden','false');
+if (l) l.setAttribute('aria-expanded','true');
+}
+function closeHelp(){
+const m = document.getElementById('helpModal');
+const l = document.getElementById('helpLink');
+if (!m) return;
+m.style.display = 'none';
+m.setAttribute('aria-hidden','true');
+if (l) l.setAttribute('aria-expanded','false');
+}
+document.addEventListener('click', (e)=>{
+if (e.target && e.target.id === 'helpLink') openHelp();
+if (e.target && e.target.id === 'helpClose') closeHelp();
+if (e.target && e.target.id === 'helpModal') {
+if (e.target === document.getElementById('helpModal')) closeHelp();
+}
+});
+document.addEventListener('keydown', (e)=>{
+if (e.key === '?') openHelp();
+if (e.key === 'Escape') closeHelp();
+});
 
 function lockProgramIfScoped(){
 const input = $('#program'), dl = $('#programList');
