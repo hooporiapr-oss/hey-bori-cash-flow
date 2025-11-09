@@ -976,6 +976,16 @@ window.addEventListener('load', loadSession);
 // ---- server ----
 const server = http.createServer(async (req, res) => {
 const url = new URL(req.url, `http://${req.headers.host}`);
+  // PUBLIC smoke test route: should ALWAYS download without auth
+if (req.method === 'GET' && url.pathname === '/__csv_test__.csv') {
+res.statusCode = 200;
+res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+res.setHeader('Content-Disposition', 'attachment; filename="test.csv"');
+res.setHeader('Cache-Control', 'no-store');
+res.write('\uFEFF');
+res.end('hello,world\n1,2\n');
+return;
+}
 
 // CSV export route — works for computer + all mobile, no messages
 if (req.method === 'GET' && url.pathname === '/exports/transactions.csv') {
