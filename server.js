@@ -24,6 +24,83 @@ let AUTH_MODE = 'none'; // 'none' | 'single' | 'multi'
 let SINGLE_HASH = null;
 let PIN_MAP = []; // [{pin, program, hash}]
 let HASH_TO_PROGRAM = new Map();
+// ---- CSV + Auth helpers ----
+
+// Parse cookies from request
+function parseCookies(req) {
+const h = req.headers.cookie || '';
+const out = {};
+h.split(';').forEach(p => {
+const [k, ...v] = p.split('=');
+if (!k) return;
+out[k.trim()] = decodeURIComponent((v.join('=') || '').trim());
+});
+return out;
+}
+
+// Detect signed-in user from cookie or token
+function userFromRequest(req) {
+if (req.user) return req.user;
+if (req.session && req.session.user) return req.session.user;
+
+const cookies = parseCookies(req);
+if (Object.keys(cookies).length > 0) {
+const program = cookies.program || cookies.cf_program || cookies.pin_program || null;
+return { via: 'cookie', program };
+}
+
+const m = (req.headers.authorization || '').match(/^Bearer\s+(.+)/i);
+if (m) return { via: 'bearer', token: m[1], program: null };
+
+return null;
+}
+
+// Build CSV from ledger.json
+function buildTransactionsCSVSync(programFilter) {
+let rows = [];
+try {
+const raw = fs.readFileSync(LEDGER_FN, 'utf8');
+const data = JSON.parse(raw);
+rows = Array.isArray(data) ? data : (Array.isArray(data.entries) ? data.entries : []);
+} catch {
+rows = [];
+}
+
+if (programFilter) {
+rows = rows.filter(r => {
+const prog = (r.program || r.team || r.league || '').toString().trim().toLowerCase();
+return prog === String(programFilter).trim().toLowerCase();
+});
+}
+
+const header = [
+'transaction_id','date','type','category','description',
+'amount','currency','program','source','created_by'
+];
+
+const lines = [header.join(',')];
+const esc = x => {
+const s = (x == null ? '' : String(x));
+return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+};
+
+for (const r of rows) {
+lines.push([
+esc(r.id || r.transaction_id || ''),
+esc(r.date || r.date_utc || r.date_local || ''),
+esc(r.type || ''),
+esc(r.category || ''),
+esc(r.description || r.memo || ''),
+esc(r.amount != null ? r.amount : ''),
+esc(r.currency || 'USD'),
+esc(r.program || ''),
+esc(r.source || ''),
+esc(r.created_by || r.user || '')
+].join(','));
+}
+
+return lines.join('\n');
+}
 
 if (ENV_PINS){
 AUTH_MODE = 'multi';
@@ -898,7 +975,28 @@ window.addEventListener('load', loadSession);
 
 // ---- server ----
 const server = http.createServer(async (req, res) => {
-try{
+const url = new URL(req.url, `http://${req.headers.host}`);
+
+// CSV export route — works for computer + all mobile, no messages
+if (req.method === 'GET' && url.pathname === '/exports/transactions.csv') {
+const user = userFromRequest(req);
+if (!user) {
+res.statusCode = 401;
+return res.end();
+}
+
+const program = user.program || null;
+const csv = buildTransactionsCSVSync(program);
+
+res.statusCode = 200;
+res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+res.setHeader('Content-Disposition', 'attachment; filename="transactions.csv"');
+res.setHeader('Cache-Control', 'no-store');
+res.write('\uFEFF'); // UTF-8 BOM so Excel opens properly
+res.end(csv);
+return;
+}
+  try{
 const u = new URL(req.url, 'http://' + (req.headers.host || 'localhost'));
 
 // CORS
