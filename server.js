@@ -374,7 +374,11 @@ if (!a.ok) return text(res,401,'auth required');
 try{
 const db = readDB();
 let rows = [...(db.entries||[])];
+
+// Apply filters from query string + program scope
 rows = applyFilters(rows, u.searchParams, a.programScope);
+
+// Build CSV
 const out = [
 ['id','date','type','amount','category','note','team','league','program','createdAt','updatedAt'].map(csvEsc).join(',')
 ];
@@ -387,11 +391,14 @@ String(e.createdAt||''), String(e.updatedAt||'')
 ].map(csvEsc).join(','));
 }
 const csv = out.join('\n');
+
+// 🚀 Important: add BOM so Excel recognizes UTF-8
 send(res,200,{
 'Content-Type':'text/csv; charset=utf-8',
 'Content-Disposition':'attachment; filename="hey-bori-cashflow.csv"',
 'Cache-Control':'no-store'
-}, csv);
+}, '\uFEFF' + csv);
+
 }catch(e){
 return text(res,500,'CSV error: '+(e.message||e));
 }
@@ -624,6 +631,34 @@ let SESSION = {authRequired:false, mode:'none', programScope:null};
 
 function authHeaders(h={}){ if (TOKEN) h['x-auth'] = TOKEN; return h; }
 async function fetchAuthed(url, opts={}){ opts.headers = authHeaders(opts.headers || {}); return fetch(url, opts); }
+// --- Silent CSV downloader using existing auth (X-Auth) ---
+const IS_IOS = /iP(hone|ad|od)/i.test(navigator.userAgent);
+
+function saveBlob(blob, filename) {
+const url = URL.createObjectURL(blob);
+if (IS_IOS) {
+// iOS opens the file; user taps "Save to Files"
+window.location.href = url;
+setTimeout(() => URL.revokeObjectURL(url), 4000);
+} else {
+const a = document.createElement('a');
+a.href = url;
+a.download = filename;
+document.body.appendChild(a);
+a.click();
+a.remove();
+setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+}
+
+async function secureCsvDownload(url, filename = 'hey-bori-cashflow.csv') {
+try {
+const r = await fetchAuthed(url, { method: 'GET', cache: 'no-store' });
+if (!r.ok) return; // stay silent per your preference
+const blob = await r.blob();
+saveBlob(blob, filename);
+} catch {}
+}
 
 // show() also controls display for the privacy banner
 function show(el, vis){ el.classList.toggle('hidden', !vis); if (el && el.id==='privacyBanner') el.style.display = vis ? 'block' : 'none'; }
@@ -703,7 +738,26 @@ input.readOnly = false;
 function updateCsvLink(){
 const qs = new URLSearchParams();
 if (SESSION.programScope) qs.set('program', SESSION.programScope);
-$('#csvLink').href = '/api/ledger/export.csv' + (qs.toString()?('?'+qs.toString()):'');
+
+// Use the secure API route you already have
+const url = '/api/ledger/export.csv' + (qs.toString() ? ('?' + qs.toString()) : '');
+
+const a = $('#csvLink');
+if (!a) return;
+
+// Store the real URL, but prevent default navigation (no headers)
+a.dataset.href = url;
+a.href = '#';
+
+// Attach click once to use fetchAuthed (adds X-Auth) then download
+if (!a.__hb_wired) {
+a.addEventListener('click', (e) => {
+e.preventDefault();
+const targetUrl = a.dataset.href || '/api/ledger/export.csv';
+secureCsvDownload(targetUrl, 'hey-bori-cashflow.csv');
+});
+a.__hb_wired = true;
+}
 }
 
 function signOut(){
