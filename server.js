@@ -1,410 +1,3 @@
-// Hey Bori Cash Flow — Multi-PIN / Single-PIN / Open
-// Privacy Banner, "Signed in as", Help modal, Charts, CSV export, Program-scoped data
-
-process.on('uncaughtException', e => console.error('[uncaughtException]', e));
-process.on('unhandledRejection', e => console.error('[unhandledRejection]', e));
-
-const http = require('http');
-const { URL }= require('url');
-const fs = require('fs');
-const path = require('path');
-const crypto = require('crypto');
-
-const PORT = Number(process.env.PORT || 10000);
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
-const LEDGER_FN = path.join(DATA_DIR, 'ledger.json');
-
-const ENV_PINS = (process.env.COACH_PINS || '').trim(); // "1628:Hey Bori Main,4521:Bayamon"
-const SINGLE_PIN = (process.env.COACH_PIN || '').trim();
-
-function sha256(s){ return crypto.createHash('sha256').update(String(s)).digest('hex'); }
-
-// ---- Auth mode ----
-let AUTH_MODE = 'none'; // 'none' | 'single' | 'multi'
-let SINGLE_HASH = null;
-let PIN_MAP = []; // [{pin, program, hash}]
-let HASH_TO_PROGRAM = new Map();
-// ---- CSV + Auth helpers ----
-
-// Parse cookies from request
-function parseCookies(req) {
-const h = req.headers.cookie || '';
-const out = {};
-h.split(';').forEach(p => {
-const [k, ...v] = p.split('=');
-if (!k) return;
-out[k.trim()] = decodeURIComponent((v.join('=') || '').trim());
-});
-return out;
-}
-
-// Detect signed-in user from cookie or token
-function userFromRequest(req) {
-if (req.user) return req.user;
-if (req.session && req.session.user) return req.session.user;
-
-const cookies = parseCookies(req);
-if (Object.keys(cookies).length > 0) {
-const program = cookies.program || cookies.cf_program || cookies.pin_program || null;
-return { via: 'cookie', program };
-}
-
-const m = (req.headers.authorization || '').match(/^Bearer\s+(.+)/i);
-if (m) return { via: 'bearer', token: m[1], program: null };
-
-return null;
-}
-
-// Build CSV from ledger.json
-function buildTransactionsCSVSync(programFilter) {
-let rows = [];
-try {
-const raw = fs.readFileSync(LEDGER_FN, 'utf8');
-const data = JSON.parse(raw);
-rows = Array.isArray(data) ? data : (Array.isArray(data.entries) ? data.entries : []);
-} catch {
-rows = [];
-}
-
-if (programFilter) {
-rows = rows.filter(r => {
-const prog = (r.program || r.team || r.league || '').toString().trim().toLowerCase();
-return prog === String(programFilter).trim().toLowerCase();
-});
-}
-
-const header = [
-'transaction_id','date','type','category','description',
-'amount','currency','program','source','created_by'
-];
-
-const lines = [header.join(',')];
-const esc = x => {
-const s = (x == null ? '' : String(x));
-return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-};
-
-for (const r of rows) {
-lines.push([
-esc(r.id || r.transaction_id || ''),
-esc(r.date || r.date_utc || r.date_local || ''),
-esc(r.type || ''),
-esc(r.category || ''),
-esc(r.description || r.memo || ''),
-esc(r.amount != null ? r.amount : ''),
-esc(r.currency || 'USD'),
-esc(r.program || ''),
-esc(r.source || ''),
-esc(r.created_by || r.user || '')
-].join(','));
-}
-
-return lines.join('\n');
-}
-
-if (ENV_PINS){
-AUTH_MODE = 'multi';
-const parts = ENV_PINS.split(/[,;\n\r]+/).map(s=>s.trim()).filter(Boolean);
-for (const p of parts){
-const i = p.indexOf(':'); // ASCII colon
-if (i>0){
-const pin = p.slice(0,i).trim();
-const program = p.slice(i+1).trim();
-if(pin){
-const hash = sha256(pin);
-PIN_MAP.push({pin, program, hash});
-HASH_TO_PROGRAM.set(hash, program);
-}
-}
-}
-if (!PIN_MAP.length) AUTH_MODE = 'none';
-}else if (SINGLE_PIN){
-AUTH_MODE = 'single';
-SINGLE_HASH = sha256(SINGLE_PIN);
-}
-
-function getAuth(req){
-if (AUTH_MODE === 'none') return {ok:true, programScope:null};
-const token = String(req.headers['x-auth'] || '').trim();
-if (!token) return {ok:false, programScope:null};
-if (AUTH_MODE === 'single') return {ok: token===SINGLE_HASH, programScope:null};
-if (HASH_TO_PROGRAM.has(token)) return {ok:true, programScope: HASH_TO_PROGRAM.get(token)};
-return {ok:false, programScope:null};
-}
-
-// ---- storage (self-healing) ----
-function ensureStore(){
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, {recursive:true});
-if (!fs.existsSync(LEDGER_FN)){
-fs.writeFileSync(LEDGER_FN, JSON.stringify({entries:[]}, null, 2));
-}
-}
-function readDB(){
-ensureStore();
-try{
-const raw = fs.readFileSync(LEDGER_FN, 'utf8');
-const data = raw?.trim() ? JSON.parse(raw) : {};
-if (!data || typeof data !== 'object') return {entries:[]};
-if (!Array.isArray(data.entries)) data.entries = [];
-return data;
-}catch(e){
-console.error('[readDB] repair ledger.json:', e.message);
-const fresh = {entries:[]};
-try{ fs.writeFileSync(LEDGER_FN, JSON.stringify(fresh,null,2)); }catch(_){}
-return fresh;
-}
-}
-function writeDB(db){
-if (!db || typeof db !== 'object') db = {entries:[]};
-if (!Array.isArray(db.entries)) db.entries = [];
-fs.writeFileSync(LEDGER_FN, JSON.stringify(db, null, 2));
-}
-
-// ---- utils ----
-function send(res, code, headers, body){ res.writeHead(code, headers); res.end(body); }
-function text(res, code, s){ send(res, code, {'Content-Type':'text/plain; charset=utf-8','Cache-Control':'no-store'}, String(s)); }
-function json(res, code, obj){ send(res, code, {'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}, JSON.stringify(obj)); }
-function uuid(){ return crypto.randomUUID ? crypto.randomUUID() : (Date.now().toString(36)+Math.random().toString(36).slice(2)); }
-function toNumber(x){ const n = Number(x); return isFinite(n) ? n : NaN; }
-function todayISO(){ return new Date().toISOString().slice(0,10); }
-function clampISODate(s){ return (/^\d{4}-\d{2}-\d{2}$/.test(String(s||''))) ? s : todayISO(); }
-function csvEsc(s){ s=(s==null?'':String(s)); return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s; }
-
-function applyFilters(rows, q, programScope){
-let r = rows;
-const from = q.get('from'), to = q.get('to');
-const team = (q.get('team')||'').trim();
-const league = (q.get('league')||'').trim();
-let program = (q.get('program')||'').trim();
-
-if (programScope){ program = programScope; } // force scope if present
-
-if (team) r = r.filter(e => (e.team||'')===team);
-if (league) r = r.filter(e => (e.league||'')===league);
-if (program) r = r.filter(e => (e.program||'')===program);
-
-if (from || to){
-const fromT = from ? new Date(from).getTime() : -Infinity;
-const toT = to ? new Date(to).getTime()+86400000-1 : +Infinity;
-r = r.filter(e=>{
-const t = new Date(e.date||todayISO()).getTime();
-return isFinite(t) && t>=fromT && t<=toT;
-});
-}
-return r;
-}
-
-// ---- API ----
-async function sessionInfo(req, res){
-const a = getAuth(req);
-const authRequired = AUTH_MODE !== 'none';
-const mode = AUTH_MODE;
-return json(res,200,{ok:true, authRequired, mode, programScope: a.ok ? a.programScope : null});
-}
-
-async function login(req, res){
-if (AUTH_MODE === 'none') return json(res,200,{ok:true, token:null, program:null, mode:'none'});
-const body = await new Promise(resolve=>{
-let b=''; req.on('data',c=>{ b+=c; if (b.length>1e6) req.destroy(); });
-req.on('end', ()=>{ try{ resolve(JSON.parse(b||'{}')); }catch{ resolve({}); } });
-});
-const pin = String(body.pin||'').trim();
-if (!pin) return json(res,400,{ok:false,error:'pin required'});
-
-if (AUTH_MODE === 'single'){
-const token = sha256(pin);
-if (token !== SINGLE_HASH) return json(res,403,{ok:false,error:'invalid pin'});
-return json(res,200,{ok:true, token, program:null, mode:'single'});
-}
-const token = sha256(pin);
-const program = HASH_TO_PROGRAM.get(token);
-if (!program) return json(res,403,{ok:false,error:'invalid pin'});
-return json(res,200,{ok:true, token, program, mode:'multi'});
-}
-
-async function parseBody(req){
-return new Promise(resolve=>{
-let b=''; req.on('data',c=>{ b+=c; if (b.length>1e6) req.destroy(); });
-req.on('end', ()=>{
-const ct = String(req.headers['content-type']||'').toLowerCase();
-if (b && ct.includes('application/json')){
-try{ return resolve(JSON.parse(b)); }catch(e){ return resolve({__parseError:'invalid JSON: '+e.message}); }
-}
-if (b && ct.includes('application/x-www-form-urlencoded')){
-const out={};
-b.split('&').forEach(kv=>{
-const [k,v=''] = kv.split('=');
-out[decodeURIComponent(k||'')] = decodeURIComponent(v.replace(/\+/g,' ')||'');
-});
-return resolve(out);
-}
-try{ return resolve(b?JSON.parse(b):{}); }catch{ return resolve({}); }
-});
-});
-}
-
-async function handleAdd(req, res){
-const a = getAuth(req);
-if (!a.ok) return json(res,401,{ok:false,error:'auth required'});
-try{
-const body = await parseBody(req);
-if (body.__parseError) return json(res,400,{ok:false,error:body.__parseError});
-
-const type = String(body.type||'').toLowerCase();
-if (!['income','expense'].includes(type)) return json(res,400,{ok:false,error:'type must be income|expense'});
-
-const amount = toNumber(body.amount);
-if (isNaN(amount) || amount <= 0) return json(res,400,{ok:false,error:'amount must be a positive number'});
-
-const program = a.programScope ? a.programScope : (body.program||'').trim();
-
-const entry = {
-id: uuid(),
-type,
-amount: Number(Number(amount).toFixed(2)),
-category: (body.category||'').trim() || '(uncategorized)',
-note: (body.note||'').trim(),
-date: clampISODate(body.date),
-team: (body.team||'').trim(),
-league: (body.league||'').trim(),
-program,
-createdAt: Date.now(),
-updatedAt: Date.now()
-};
-
-const db = readDB();
-db.entries.unshift(entry);
-writeDB(db);
-return json(res,200,{ok:true, entry});
-}catch(e){
-console.error('add error', e);
-return json(res,500,{ok:false,error:'server add error: '+(e.message||e)});
-}
-}
-
-function meta(req, res){
-const a = getAuth(req);
-if (!a.ok) return json(res,401,{ok:false,error:'auth required'});
-try{
-const db = readDB();
-let rows = [...(db.entries||[])];
-if (a.programScope){ rows = rows.filter(e => (e.program||'')===a.programScope); }
-
-const teams = new Set(), leagues = new Set(), cats = new Set(), progs = new Set();
-for (const e of rows){
-if (e.team) teams.add(e.team);
-if (e.league) leagues.add(e.league);
-if (e.category) cats.add(e.category);
-if (e.program) progs.add(e.program);
-}
-return json(res,200,{ok:true,
-teams:[...teams].sort((x,y)=>x.localeCompare(y)),
-leagues:[...leagues].sort((x,y)=>x.localeCompare(y)),
-categories:[...cats].sort((x,y)=>x.localeCompare(y)),
-programs:[...progs].sort((x,y)=>x.localeCompare(y)),
-scope: a.programScope || null
-});
-}catch(e){
-return json(res,500,{ok:false,error:'server meta error: '+(e.message||e)});
-}
-}
-
-function listEntries(req, res, u){
-const a = getAuth(req);
-if (!a.ok) return json(res,401,{ok:false,error:'auth required'});
-try{
-const db = readDB();
-let out = [...(db.entries||[])];
-out = applyFilters(out, u.searchParams, a.programScope);
-out.sort((a,b)=>{
-const d = String(b.date||'').localeCompare(String(a.date||''));
-return d || ((b.createdAt||0) - (a.createdAt||0));
-});
-return json(res,200,{ok:true, entries: out});
-}catch(e){
-return json(res,500,{ok:false,error:'server list error: '+(e.message||e)});
-}
-}
-
-function summarize(req, res, u){
-const a = getAuth(req);
-if (!a.ok) return json(res,401,{ok:false,error:'auth required'});
-try{
-const days = Math.max(1, Math.min(365, Number(u.searchParams.get('range') || 30)));
-const cutoff = Date.now() - days*24*60*60*1000;
-const db = readDB();
-let within = (db.entries||[]).filter(e=>{
-const t = new Date(e.date||todayISO()).getTime();
-return isFinite(t) && t >= cutoff;
-});
-if (a.programScope) within = within.filter(e => (e.program||'')===a.programScope);
-
-let income=0, expense=0;
-const byCat = {}, byTL = {}, byProgram = {};
-for (const e of within){
-if (e.type==='income') income += e.amount; else expense += e.amount;
-
-const k = e.category||'(uncategorized)';
-byCat[k] = byCat[k] || {income:0,expense:0}; byCat[k][e.type]+=e.amount;
-
-const tl = (e.team||'-')+' | '+(e.league||'-');
-byTL[tl] = byTL[tl] || {income:0,expense:0}; byTL[tl][e.type]+=e.amount;
-
-const prog = e.program||'(no program)';
-byProgram[prog] = byProgram[prog] || {income:0,expense:0}; byProgram[prog][e.type]+=e.amount;
-}
-const net = Number((income - expense).toFixed(2));
-return json(res,200,{
-ok:true,
-rangeDays:days,
-totals:{income:+income.toFixed(2), expense:+expense.toFixed(2), net},
-byCategory:byCat,
-byTeamLeague:byTL,
-byProgram,
-count:within.length
-});
-}catch(e){
-return json(res,500,{ok:false,error:'server summary error: '+(e.message||e)});
-}
-}
-
-function exportCSV(req, res, u){
-const a = getAuth(req);
-if (!a.ok) return text(res,401,'auth required');
-try{
-const db = readDB();
-let rows = [...(db.entries||[])];
-
-// Apply filters from query string + program scope
-rows = applyFilters(rows, u.searchParams, a.programScope);
-
-// Build CSV
-const out = [
-['id','date','type','amount','category','note','team','league','program','createdAt','updatedAt'].map(csvEsc).join(',')
-];
-for (const e of rows){
-out.push([
-e.id, e.date, e.type, String(e.amount),
-e.category||'', e.note||'',
-e.team||'', e.league||'', e.program||'',
-String(e.createdAt||''), String(e.updatedAt||'')
-].map(csvEsc).join(','));
-}
-const csv = out.join('\n');
-
-// 🚀 Important: add BOM so Excel recognizes UTF-8
-send(res,200,{
-'Content-Type':'text/csv; charset=utf-8',
-'Content-Disposition':'attachment; filename="hey-bori-cashflow.csv"',
-'Cache-Control':'no-store'
-}, '\uFEFF' + csv);
-
-}catch(e){
-return text(res,500,'CSV error: '+(e.message||e));
-}
-}
-
-// ---- UI ----
 function uiHTML(){
 return `<!doctype html>
 <html lang="en">
@@ -478,6 +71,15 @@ canvas{width:100%;max-width:680px;height:280px;background:#0d1220;border:1px sol
 #signout button{padding:6px 10px;border-radius:8px;border:1px solid #2a3b55;background:#0d1320;color:#cfe2ff}
 #signout button:hover{border-color:#3c5d8a}
 .hdr-right{margin-left:auto;display:flex;gap:10px;align-items:center}
+
+/* ——— Request PIN Access responsiveness ——— */
+.form-grid{ display:grid; gap:10px; grid-template-columns:1fr; }
+.form-actions{ display:flex; gap:10px; flex-wrap:wrap; }
+.form-actions button{ width:100%; }
+@media (min-width: 720px){
+.form-grid.two-col{ grid-template-columns: 1fr 1fr; }
+.form-actions button{ width:auto; }
+}
 </style>
 </head>
 <body>
@@ -506,6 +108,41 @@ Basketball Cash Flow
 <div class="col"><span id="loginStatus" class="small"></span></div>
 </div>
 <div id="modeInfo" class="small" style="margin-top:6px;color:#8ca3c9"></div>
+</section>
+
+<!-- ✅ Request PIN Access (new) -->
+<section id="requestPin" class="card" style="margin-top:10px;">
+<h3 style="margin:0 0 8px 0;">Request PIN Access</h3>
+<p class="small" style="margin-bottom:10px;">
+New program? Complete this quick form and we’ll email your secure Basketball Cash Flow access details.
+</p>
+
+<form action="mailto:FiatPalante@gmail.com?subject=PIN%20Access%20Request%20-%20Basketball%20Cash%20Flow"
+method="post" enctype="text/plain">
+<div class="form-grid two-col">
+<div>
+<label>Program Name</label>
+<input type="text" name="Program Name" placeholder="e.g., Arecibo Youth Basketball" required autocomplete="organization">
+</div>
+<div>
+<label>Location</label>
+<input type="text" name="Location" placeholder="City, Region" required autocomplete="address-level2">
+</div>
+</div>
+
+<div class="form-grid" style="margin-top:10px;">
+<div>
+<label>Email</label>
+<input type="email" name="Email" placeholder="your@email.com" required inputmode="email" autocomplete="email">
+</div>
+</div>
+
+<div class="form-actions" style="margin-top:10px;">
+<button type="submit" class="primary">Request Access</button>
+</div>
+</form>
+
+<p class="small" style="margin-top:10px;">⚡ A confirmation window will open in your email app.</p>
 </section>
 
 <!-- Charts -->
@@ -600,7 +237,7 @@ Basketball Cash Flow
 <div id="helpModal" aria-hidden="true" aria-label="Help dialog">
 <div id="helpCard">
 <button id="helpClose" aria-label="Close help">Close</button>
-<h3>How to use Hey Bori Cash Flow</h3>
+<h3>How to use Basketball Cash Flow</h3>
 <p><b>Private Mode:</b> You’re in a locked space. Each coach/program sees only their own data.</p>
 <ol>
 <li><b>Sign In:</b> Enter your PIN and click <i>Sign In</i>. You’ll see <i>Program</i> in the header.</li>
@@ -617,8 +254,8 @@ Basketball Cash Flow
 </ul>
 <div id="helpFooter">
 Need more help? Email us anytime at
-<a href="mailto:heyborico@gmail.com" target="_blank" rel="noopener noreferrer" style="color:#9fc1ff;text-decoration:underline;">heyborico@gmail.com</a>
-— Hey Bori Labs LLC.
+<a href="mailto:FiatPalante@gmail.com" target="_blank" rel="noopener noreferrer" style="color:#9fc1ff;text-decoration:underline;">FiatPalante@gmail.com</a>
+— Hooporia Institute Inc.
 </div>
 </div>
 </div>
@@ -631,30 +268,25 @@ let SESSION = {authRequired:false, mode:'none', programScope:null};
 
 function authHeaders(h={}){ if (TOKEN) h['x-auth'] = TOKEN; return h; }
 async function fetchAuthed(url, opts={}){ opts.headers = authHeaders(opts.headers || {}); return fetch(url, opts); }
+
 // --- Silent CSV downloader using existing auth (X-Auth) ---
 const IS_IOS = /iP(hone|ad|od)/i.test(navigator.userAgent);
-
 function saveBlob(blob, filename) {
 const url = URL.createObjectURL(blob);
 if (IS_IOS) {
-// iOS opens the file; user taps "Save to Files"
 window.location.href = url;
 setTimeout(() => URL.revokeObjectURL(url), 4000);
 } else {
 const a = document.createElement('a');
-a.href = url;
-a.download = filename;
-document.body.appendChild(a);
-a.click();
-a.remove();
+a.href = url; a.download = filename;
+document.body.appendChild(a); a.click(); a.remove();
 setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 }
-
 async function secureCsvDownload(url, filename = 'hey-bori-cashflow.csv') {
 try {
 const r = await fetchAuthed(url, { method: 'GET', cache: 'no-store' });
-if (!r.ok) return; // stay silent per your preference
+if (!r.ok) return;
 const blob = await r.blob();
 saveBlob(blob, filename);
 } catch {}
@@ -738,18 +370,9 @@ input.readOnly = false;
 function updateCsvLink(){
 const qs = new URLSearchParams();
 if (SESSION.programScope) qs.set('program', SESSION.programScope);
-
-// Use the secure API route you already have
 const url = '/api/ledger/export.csv' + (qs.toString() ? ('?' + qs.toString()) : '');
-
-const a = $('#csvLink');
-if (!a) return;
-
-// Store the real URL, but prevent default navigation (no headers)
-a.dataset.href = url;
-a.href = '#';
-
-// Attach click once to use fetchAuthed (adds X-Auth) then download
+const a = $('#csvLink'); if (!a) return;
+a.dataset.href = url; a.href = '#';
 if (!a.__hb_wired) {
 a.addEventListener('click', (e) => {
 e.preventDefault();
@@ -773,14 +396,20 @@ const r = await fetchAuthed('/api/session',{cache:'no-store'});
 const j = await r.json();
 SESSION = {authRequired:j.authRequired, mode:j.mode, programScope:j.programScope};
 setHeaderBadges(SESSION.programScope);
-if (!SESSION.authRequired){ show($('#loginCard'), false); showApp(true); init(); return; }
+if (!SESSION.authRequired){ show($('#loginCard'), false); show($('#requestPin'), false); showApp(true); init(); return; }
 if (TOKEN && (SESSION.programScope !== null || SESSION.mode==='single')){
-show($('#loginCard'), false); showApp(true); init(); return;
+show($('#loginCard'), false); show($('#requestPin'), false); showApp(true); init(); return;
 }
+// Not signed in yet → show login + request PIN
 $('#modeInfo').textContent = 'Mode: '+SESSION.mode+' — PINs required';
-show($('#loginCard'), true); showApp(false);
+show($('#loginCard'), true);
+show($('#requestPin'), true);
+showApp(false);
 }catch(e){
-show($('#loginCard'), false); showApp(true); init();
+// If /api/session fails, still show login + request PIN
+show($('#loginCard'), true);
+show($('#requestPin'), true);
+showApp(false);
 }
 }
 
@@ -796,7 +425,7 @@ if (j.token){ TOKEN = j.token; localStorage.setItem('hb_token', TOKEN); }
 SESSION = {authRequired:true, mode:j.mode, programScope:j.program||null};
 setHeaderBadges(SESSION.programScope);
 $('#loginStatus').textContent = 'Unlocked ✓';
-show($('#loginCard'), false); showApp(true); init();
+show($('#loginCard'), false); show($('#requestPin'), false); showApp(true); init();
 }catch(e){
 $('#loginStatus').textContent = 'Network error';
 }
@@ -1026,73 +655,3 @@ window.addEventListener('load', loadSession);
 </script>
 </body></html>`;
 }
-
-// ---- server ----
-const server = http.createServer(async (req, res) => {
-const url = new URL(req.url, `http://${req.headers.host}`);
-  // PUBLIC smoke test route: should ALWAYS download without auth
-if (req.method === 'GET' && url.pathname === '/__csv_test__.csv') {
-res.statusCode = 200;
-res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-res.setHeader('Content-Disposition', 'attachment; filename="test.csv"');
-res.setHeader('Cache-Control', 'no-store');
-res.write('\uFEFF');
-res.end('hello,world\n1,2\n');
-return;
-}
-
-// CSV export route — works for computer + all mobile, no messages
-if (req.method === 'GET' && url.pathname === '/exports/transactions.csv') {
-// TEMP: allow CSV without auth so export works everywhere
-const user = userFromRequest(req); // may be null — that's fine
-
-const program = user.program || null;
-const csv = buildTransactionsCSVSync(program);
-
-res.statusCode = 200;
-res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-res.setHeader('Content-Disposition', 'attachment; filename="transactions.csv"');
-res.setHeader('Cache-Control', 'no-store');
-res.write('\uFEFF'); // UTF-8 BOM so Excel opens properly
-res.end(csv);
-return;
-}
-  try{
-const u = new URL(req.url, 'http://' + (req.headers.host || 'localhost'));
-
-// CORS
-res.setHeader('Access-Control-Allow-Origin', '*');
-res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Auth');
-if (req.method === 'OPTIONS') return send(res,204,{},'');
-
-if (req.method === 'GET' && u.pathname === '/health') return text(res,200,'OK');
-if (req.method === 'GET' && u.pathname === '/') return send(res,200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}, uiHTML());
-
-if (req.method === 'GET' && u.pathname === '/api/session') return sessionInfo(req,res);
-if (req.method === 'POST' && u.pathname === '/api/login') return login(req,res);
-
-if (req.method === 'GET' && u.pathname === '/api/ledger/meta') return meta(req,res);
-if (req.method === 'POST' && u.pathname === '/api/ledger/add') return handleAdd(req,res);
-if (req.method === 'GET' && u.pathname === '/api/ledger/list') return listEntries(req,res,u);
-if (req.method === 'GET' && u.pathname === '/api/ledger/summary') return summarize(req,res,u);
-if (req.method === 'GET' && u.pathname === '/api/ledger/export.csv') return exportCSV(req,res,u);
-
-return text(res,404,'Not Found');
-}catch(e){
-console.error(e);
-return text(res,500,'Server error');
-}
-});
-
-server.listen(PORT, ()=>{
-try{
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, {recursive:true});
-ensureStore();
-console.log('💵 Hey Bori Cash Flow — mode='+AUTH_MODE.toUpperCase()+
-(AUTH_MODE==='multi' ? ` | programs=${PIN_MAP.length}` : '')+
-' | PORT='+PORT+' | DATA_DIR='+DATA_DIR);
-}catch(e){
-console.error('Startup store error', e);
-}
-});
