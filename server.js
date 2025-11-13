@@ -1199,46 +1199,63 @@ Basketball Cash Flow
 <div id="helpModal" aria-hidden="true" aria-label="Help dialog">
 
 <div id="helpCard">
-
 <button id="helpClose" aria-label="Close help">Close</button>
 
-<h3>How to use Hey Bori Cash Flow</h3>
+<!-- ENGLISH -->
+<div class="lang-en">
+<h3>How to use Hoops Ledger</h3>
 
-<p><b>Private Mode:</b> You’re in a locked space. Each coach/program sees only their own data.</p>
+<p><b>What is this?</b> Hoops Ledger helps your program track income and expenses for teams, leagues, and tournaments — fast, simple, and private.</p>
 
 <ol>
-
-<li><b>Sign In:</b> Enter your PIN and click <i>Sign In</i>. You’ll see <i>Program</i> in the header.</li>
-
-<li><b>Add an Entry:</b> Choose <i>Type</i> (Income/Expense), enter <i>Amount</i>, pick a <i>Category</i>, set <i>Date</i>, and optionally <i>Team</i>, <i>League</i>, <i>Note</i>. Click <i>Add Entry</i>.</li>
-
-<li><b>Summary & Charts:</b> Pick <i>Range (days)</i>, click <i>Refresh</i>/<i>Refresh Summary</i> to update totals, categories, and bar chart.</li>
-
-<li><b>Export CSV:</b> Click <i>Download CSV</i> to get your program’s data for spreadsheets or reports.</li>
-
-<li><b>Sign Out:</b> Use the <i>Sign Out</i> button in the top-right when you’re done.</li>
-
+<li><b>Sign In:</b> Enter your coach/program PIN and click <i>Sign In</i>. You'll see your program name when unlocked.</li>
+<li><b>Add an Entry:</b> Select <i>Type</i>, enter <i>Amount</i>, choose a <i>Category</i>, set the <i>Date</i>, and add optional <i>Team</i>, <i>League</i>, or <i>Note</i>. Click <i>Add Entry</i>.</li>
+<li><b>View the Ledger:</b> Scroll the table to view all entries for your program.</li>
+<li><b>Summaries:</b> Review totals by Category, Team | League, and Program for the selected time range.</li>
+<li><b>Export CSV:</b> Use <i>Download CSV</i> to export data for spreadsheets or sponsor reports.</li>
 </ol>
 
 <p><b>Tips</b></p>
-
 <ul>
-
-<li>Press <kbd>?</kbd> to open this help. Press <kbd>Esc</kbd> to close.</li>
-
-<li>Entries are scoped to your <b>Program</b> automatically in multi-PIN mode.</li>
-
-<li>Use consistent categories (Registration, Dues, Uniforms, etc.) for cleaner reports.</li>
-
+<li>Each program only sees its own data (private by design).</li>
+<li>Use consistent categories for cleaner summaries.</li>
+<li>You can adjust the date range anytime.</li>
 </ul>
 
 <div id="helpFooter">
+Need more help? Email us at
+<a href="mailto:FiatPalante@gmail.com" style="color:#9fc1ff;text-decoration:underline;">FiatPalante@gmail.com</a>
+— Hooporia Institute Inc.
+</div>
+</div>
 
-Need more help? Email us anytime at
+<!-- SPANISH PR -->
+<div class="lang-es" style="display:none">
+<h3>Cómo usar Hoops Ledger</h3>
 
-<a href="mailto:heyborico@gmail.com" target="_blank" rel="noopener noreferrer" style="color:#9fc1ff;text-decoration:underline;">heyborico@gmail.com</a>
+<p><b>¿Qué es esto?</b> Hoops Ledger ayuda a tu programa a llevar el control de ingresos y gastos por equipos, ligas y torneos — rápido, simple y privado.</p>
 
-— Hey Bori Labs LLC.
+<ol>
+<li><b>Iniciar Sesión:</b> Entra tu PIN de coach/programa y presiona <i>Sign In</i>. Verás el nombre de tu programa cuando esté desbloqueado.</li>
+<li><b>Añadir Transacción:</b> Selecciona el <i>Tipo</i>, escribe el <i>Monto</i>, escoge la <i>Categoría</i>, pon la <i>Fecha</i>, y añade <i>Equipo</i>, <i>Liga</i> o <i>Nota</i> si es necesario. Luego presiona <i>Add Entry</i>.</li>
+<li><b>Ver el Registro:</b> Revisa la tabla para ver todas las transacciones de tu programa.</li>
+<li><b>Resúmenes:</b> Observa totales por Categoría, Equipo | Liga y Programa para el rango seleccionado.</li>
+<li><b>Exportar CSV:</b> Usa <i>Download CSV</i> para exportar datos para hojas de cálculo o informes a auspiciadores.</li>
+</ol>
+
+<p><b>Consejos</b></p>
+<ul>
+<li>Cada programa solo ve su propia información (privado por diseño).</li>
+<li>Usa categorías consistentes para mejores reportes.</li>
+<li>Puedes ajustar el rango de fechas en cualquier momento.</li>
+</ul>
+
+<div id="helpFooter">
+¿Necesitas ayuda adicional? Escríbenos a
+<a href="mailto:FiatPalante@gmail.com" style="color:#9fc1ff;text-decoration:underline;">FiatPalante@gmail.com</a>
+— Hooporia Institute Inc.
+</div>
+</div>
 
 </div>
 
