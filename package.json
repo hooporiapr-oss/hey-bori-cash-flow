@@ -1,7 +1,7 @@
 {
 "name": "hey-bori-cash-flow",
 "version": "1.0.0",
-"description": "Bilingual cash-flow tracker for youth basketball teams — by Bori Labs LLC",
+"description": "Bilingual cash-flow tracker for youth basketball teams — by Hooporia Institute Inc.",
 "main": "server.js",
 "scripts": {
 "start": "node server.js"
