@@ -824,7 +824,7 @@ return `<!doctype html>
 
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 
-<title>Basketball Cash Flow</title>
+<title>Cash Flow Hoops</title>
 
 <style>
 
@@ -968,7 +968,7 @@ canvas{width:100%;max-width:680px;height:280px;background:#0d1220;border:1px sol
 
 <h1>
 
-Basketball Cash Flow
+Cash Flow Hoops
 
 <span id="scopePill" class="pill hidden"></span>
 
