@@ -967,22 +967,25 @@ canvas{width:100%;max-width:680px;height:280px;background:#0d1220;border:1px sol
 <header>
 
 <h1>
-
 Basketball Cash Flow
-
 <span id="scopePill" class="pill hidden"></span>
-
 <span class="hdr-right">
-
 <span id="signedAs" class="hidden"></span>
-
-<span id="signout" class="hidden"><button id="signoutBtn" title="Sign out">Sign Out</button></span>
-
+<span id="signout" class="hidden">
+<button id="signoutBtn" title="Sign out">Sign Out</button>
 </span>
-
+</span>
 </h1>
 
 <div class="sub">Simple • Fast • For youth teams & leagues</div>
+
+<!-- 🔹 Need Help link directly under title/subtitle -->
+<div style="margin-top:6px; font-size:13px; text-align:center;">
+<a href="https://hoops.money/help.html"
+style="color:#9fc1ff; text-decoration:underline;">
+Need help? Visit the Help Page
+</a>
+</div>
 
 <div id="privacyBanner">🔒 Private Space</div>
 
