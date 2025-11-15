@@ -1643,6 +1643,42 @@ document.addEventListener('keydown', (e)=>{
 if (e.key === '?') openHelp();
 
 if (e.key === 'Escape') closeHelp();
+.help-title{
+text-align:center;
+margin:0 0 6px 0;
+font-size:18px;
+}
+
+.help-lang-toggle-row{
+display:flex;
+justify-content:center;
+gap:8px;
+margin:4px 0 10px 0;
+}
+
+.help-lang-btn{
+border:1px solid #2a3b55;
+background:#0d1320;
+color:#cfe2ff;
+border-radius:999px;
+padding:4px 12px;
+font-size:12px;
+cursor:pointer;
+}
+
+.help-lang-btn.active{
+background:linear-gradient(90deg,#2dd4bf,#60a5fa);
+color:#041214;
+font-weight:700;
+border:none;
+}
+
+.help-lang-block p,
+.help-lang-block li{
+font-size:14px;
+line-height:1.45;
+}
+
 
 });
 // ---- Help modal language toggle ----
