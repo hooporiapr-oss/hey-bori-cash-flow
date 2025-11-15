@@ -916,6 +916,43 @@ border-radius:8px; padding:6px 10px; cursor:pointer;
 }
 
 #helpFooter{ margin-top:10px; font-size:12px; color:#9db3d8 }
+.help-header-row{
+display:flex;
+justify-content:space-between;
+align-items:center;
+gap:8px;
+margin-bottom:4px;
+}
+.help-header-row h3{
+margin:0;
+font-size:18px;
+}
+
+.help-lang-toggle{
+display:inline-flex;
+border-radius:999px;
+border:1px solid #2a3b55;
+overflow:hidden;
+}
+.help-lang-toggle button{
+border:none;
+background:transparent;
+color:#9db3d8;
+padding:4px 10px;
+font-size:11px;
+cursor:pointer;
+}
+.help-lang-toggle button.active{
+background:linear-gradient(90deg,#2dd4bf,#60a5fa);
+color:#041214;
+font-weight:700;
+}
+
+.help-lang-block p,
+.help-lang-block li{
+font-size:14px;
+line-height:1.45;
+}
 
 kbd{
 
@@ -1206,35 +1243,77 @@ Cash Flow Hoops
 <!-- Help modal -->
 
 <div id="helpModal" aria-hidden="true" aria-label="Help dialog">
-
 <div id="helpCard">
 <button id="helpClose" aria-label="Close help">Close</button>
 
-<!-- ENGLISH -->
-<div class="lang-en">
-<h3>How to use Hoops Ledger</h3>
+<div class="help-header-row">
+<h3>
+<span class="help-title-en">How to use Cash Flow Hoops</span>
+<span class="help-title-es" style="display:none;">Cómo usar Cash Flow Hoops</span>
+</h3>
 
-<p><b>What is this?</b> Hoops Ledger helps your program track income and expenses for teams, leagues, and tournaments — fast, simple, and private.</p>
+<div class="help-lang-toggle" role="group" aria-label="Help language">
+<button type="button" id="helpEn" class="active">EN</button>
+<button type="button" id="helpEs">ES-PR</button>
+</div>
+</div>
 
+<div id="helpContent">
+<!-- ENGLISH BLOCK -->
+<div class="help-lang-block help-lang-en">
+<p><b>Private Mode:</b> You’re in a locked space. Each coach or program sees only its own data.</p>
 <ol>
-<li><b>Sign In:</b> Enter your coach/program PIN and click <i>Sign In</i>. You'll see your program name when unlocked.</li>
-<li><b>Add an Entry:</b> Select <i>Type</i>, enter <i>Amount</i>, choose a <i>Category</i>, set the <i>Date</i>, and add optional <i>Team</i>, <i>League</i>, or <i>Note</i>. Click <i>Add Entry</i>.</li>
-<li><b>View the Ledger:</b> Scroll the table to view all entries for your program.</li>
-<li><b>Summaries:</b> Review totals by Category, Team | League, and Program for the selected time range.</li>
-<li><b>Export CSV:</b> Use <i>Download CSV</i> to export data for spreadsheets or sponsor reports.</li>
+<li><b>Sign In:</b> Enter your PIN and click <i>Sign In</i>. Your program name will appear at the top.</li>
+<li><b>Add an Entry:</b> Choose <i>Income</i> or <i>Expense</i>, enter the <i>Amount</i>, pick a <i>Category</i>, set the <i>Date</i>, and optionally add <i>Team</i>, <i>League</i>, and a <i>Note</i>. Then click <i>Add Entry</i>.</li>
+<li><b>Summary & Charts:</b> Use the range in days to see totals by category, team | league, and program.</li>
+<li><b>Export CSV:</b> Click <i>Download CSV</i> to export your data for accounting, sponsors, or reports.</li>
+<li><b>Sign Out:</b> When you’re done, click <i>Sign Out</i> at the top-right.</li>
 </ol>
 
 <p><b>Tips</b></p>
 <ul>
-<li>Each program only sees its own data (private by design).</li>
-<li>Use consistent categories for cleaner summaries.</li>
-<li>You can adjust the date range anytime.</li>
+<li>Use clear categories (Registration, Dues, Uniforms, Travel, Tournament, etc.) so reports stay clean.</li>
+<li>Keep one program PIN per organization and only share it with trusted staff.</li>
+<li>Update entries weekly so your cash flow is always ready for parents and sponsors.</li>
 </ul>
 
 <div id="helpFooter">
 Need more help? Email us at
-<a href="mailto:FiatPalante@gmail.com" style="color:#9fc1ff;text-decoration:underline;">FiatPalante@gmail.com</a>
-— Hooporia Institute Inc.
+<a href="mailto:FiatPalante@gmail.com" target="_blank" rel="noopener noreferrer" style="color:#9fc1ff;text-decoration:underline;">
+FiatPalante@gmail.com
+</a>
+— Cash Flow Hoops • Hooporia Institute Inc.
+</div>
+</div>
+
+<!-- SPANISH (PR) BLOCK -->
+<div class="help-lang-block help-lang-es" style="display:none;">
+<p><b>Modo privado:</b> Estás en un espacio cerrado. Cada coach o programa solo ve sus propios datos.</p>
+<ol>
+<li><b>Entrar:</b> Escribe tu PIN y haz clic en <i>Sign In</i>. El nombre de tu programa aparece arriba.</li>
+<li><b>Añadir entrada:</b> Escoge <i>Income</i> (ingreso) o <i>Expense</i> (gasto), escribe el <i>Amount</i>, selecciona la <i>Category</i>, pon la <i>Date</i> y, si deseas, añade <i>Team</i>, <i>League</i> y una <i>Note</i>. Luego haz clic en <i>Add Entry</i>.</li>
+<li><b>Resumen y gráficas:</b> Usa el rango en días para ver totales por categoría, equipo | liga y programa.</li>
+<li><b>Exportar CSV:</b> Haz clic en <i>Download CSV</i> para exportar los datos para contabilidad, auspiciadores o informes.</li>
+<li><b>Salir:</b> Cuando termines, usa el botón de <i>Sign Out</i> arriba a la derecha.</li>
+</ol>
+
+<p><b>Tips</b></p>
+<ul>
+<li>Usa categorías claras (Registration, Dues, Uniforms, Travel, Tournament, etc.) para que los reportes se mantengan limpios.</li>
+<li>Mantén un solo PIN de programa por organización y compártelo solo con personal de confianza.</li>
+<li>Actualiza las entradas semanalmente para que tu flujo de caja siempre esté listo para padres y auspiciadores.</li>
+</ul>
+
+<div id="helpFooter">
+¿Necesitas más ayuda? Escríbenos a
+<a href="mailto:FiatPalante@gmail.com" target="_blank" rel="noopener noreferrer" style="color:#9fc1ff;text-decoration:underline;">
+FiatPalante@gmail.com
+</a>
+— Cash Flow Hoops • Hooporia Institute Inc.
+</div>
+</div>
+</div>
+</div>
 </div>
 </div>
 
@@ -1475,6 +1554,54 @@ if (e.key === '?') openHelp();
 if (e.key === 'Escape') closeHelp();
 
 });
+// ---- Help modal language toggle ----
+(function(){
+const KEY = 'help_lang';
+
+function setHelpLang(lang){
+const enBlock = document.querySelector('.help-lang-en');
+const esBlock = document.querySelector('.help-lang-es');
+const titleEn = document.querySelector('.help-title-en');
+const titleEs = document.querySelector('.help-title-es');
+const btnEn = document.getElementById('helpEn');
+const btnEs = document.getElementById('helpEs');
+
+if (!enBlock || !esBlock || !btnEn || !btnEs || !titleEn || !titleEs) return;
+
+if (lang === 'es'){
+enBlock.style.display = 'none';
+esBlock.style.display = 'block';
+titleEn.style.display = 'none';
+titleEs.style.display = 'inline';
+btnEn.classList.remove('active');
+btnEs.classList.add('active');
+} else {
+lang = 'en';
+enBlock.style.display = 'block';
+esBlock.style.display = 'none';
+titleEn.style.display = 'inline';
+titleEs.style.display = 'none';
+btnEn.classList.add('active');
+btnEs.classList.remove('active');
+}
+try{ localStorage.setItem(KEY, lang); }catch(_){}
+}
+
+function initHelpLang(){
+const btnEn = document.getElementById('helpEn');
+const btnEs = document.getElementById('helpEs');
+if (!btnEn || !btnEs) return;
+
+const saved = (()=>{ try{return localStorage.getItem(KEY)}catch(_){return null} })();
+setHelpLang(saved === 'es' ? 'es' : 'en');
+
+btnEn.addEventListener('click', ()=> setHelpLang('en'));
+btnEs.addEventListener('click', ()=> setHelpLang('es'));
+}
+
+// Initialize once the app UI is loaded
+window.addEventListener('load', initHelpLang);
+})();
 
 
 
