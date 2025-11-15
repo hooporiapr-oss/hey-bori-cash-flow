@@ -879,21 +879,28 @@ font-size:13px;
 
 
 #helpModal{
-
-display:none; position:fixed; inset:0; z-index:9999;
-
-background:rgba(0,0,0,.55); padding:20px;
-
+display:none;
+position:fixed;
+inset:0;
+z-index:9999;
+background:rgba(0,0,0,.55);
+padding:20px;
+/* ✅ allow scrolling on small screens */
+overflow-y:auto;
 }
 
 #helpCard{
-
-max-width:680px; margin:40px auto; background:#0c1016; color:#e8edf4;
-
-border:1px solid #29415f; border-radius:12px; padding:16px;
-
+max-width:680px;
+margin:40px auto;
+background:#0c1016;
+color:#e8edf4;
+border:1px solid #29415f;
+border-radius:12px;
+padding:16px;
 box-shadow:0 10px 30px rgba(0,0,0,.35);
-
+/* ✅ keep card bounded & scroll inside the card */
+max-height:80vh;
+overflow-y:auto;
 }
 
 #helpCard h3{ margin:0 0 8px 0; font-size:18px }
