@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en" data-lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Request Received — Cash Flow Hoops</title>
+<meta name="description" content="Your Cash Flow Hoops PIN request has been received. Review and approval typically takes 24–48 hours." />
+<meta name="theme-color" content="#0e1116" />
+
+<style>
+:root{
+--bg:#0e1116; --card:#151a22; --line:#1f2733; --text:#e8edf4; --muted:#a7b1c2;
+--accent:#2dd4bf; --accent2:#60a5fa; --ctaTxt:#06221f;
+}
+*{box-sizing:border-box}
+body{
+margin:0;
+font-family:system-ui,-apple-system,Segoe UI,Inter,Roboto,Arial,sans-serif;
+color:var(--text);
+background:linear-gradient(180deg,#0b0f14,#0e1116);
+}
+.wrap{
+max-width:800px;
+margin:0 auto;
+padding:40px 20px;
+}
+
+/* HEADER */
+header{
+text-align:center;
+padding:20px 0 14px;
+border-bottom:1px solid var(--line);
+}
+.logo{
+height:46px;
+width:auto;
+border-radius:6px;
+}
+.title{
+font-weight:800;
+letter-spacing:.2px;
+margin-top:8px;
+font-size:20px;
+}
+
+/* LANGUAGE TOGGLE */
+.lang-toggle{
+display:flex;
+justify-content:center;
+gap:8px;
+margin-top:12px;
+}
+.lang-toggle button{
+border:1px solid #2a3b55;
+background:#0d1320;
+color:#cfe2ff;
+border-radius:20px;
+padding:6px 12px;
+cursor:pointer;
+font-size:12px;
+}
+.lang-toggle button.active{
+background:linear-gradient(90deg,var(--accent),var(--accent2));
+color:#06221f;
+font-weight:800;
+border:none;
+}
+
+[data-lang="en"] .lang-es{display:none}
+[data-lang="es"] .lang-en{display:none}
+
+/* CARD */
+.card{
+background:var(--card);
+border:1px solid var(--line);
+border-radius:14px;
+padding:26px;
+margin-top:28px;
+box-shadow:0 10px 26px rgba(0,0,0,.28);
+}
+.card h1{
+margin:0 0 12px;
+font-size:26px;
+font-weight:800;
+}
+.subline{
+color:var(--muted);
+margin:0 0 20px;
+font-size:15px;
+line-height:1.6;
+}
+.next-steps{
+margin-top:18px;
+}
+.next-steps ol{
+padding-left:22px;
+margin:6px 0;
+color:var(--muted);
+}
+.next-steps li{
+margin:6px 0;
+}
+.meta-line{
+margin-top:20px;
+font-size:13px;
+color:var(--muted);
+}
+
+/* BACK BUTTON */
+.back-btn{
+display:inline-block;
+margin-top:26px;
+padding:12px 18px;
+border-radius:12px;
+font-weight:900;
+font-size:15px;
+background:linear-gradient(90deg,var(--accent),var(--accent2));
+color:#06221f;
+text-decoration:none;
+}
+
+/* FOOTER */
+footer{
+margin-top:40px;
+border-top:1px solid var(--line);
+padding:20px;
+text-align:center;
+font-size:13px;
+color:var(--muted);
+}
+footer a{color:#9fc1ff;text-decoration:underline}
+</style>
+</head>
+
+<body>
+
+<header>
+<img src="/images/hooporia-logo.png" class="logo" alt="Hooporia Institute Inc. Logo">
+<div class="title">Cash Flow Hoops</div>
+
+<div class="lang-toggle">
+<button id="btn-en" class="active">EN</button>
+<button id="btn-es">ES (PR)</button>
+</div>
+</header>
+
+<div class="wrap">
+<div class="card">
+
+<h1>
+<span class="lang-en">Request Received</span>
+<span class="lang-es">Solicitud Recibida</span>
+</h1>
+
+<p class="subline">
+<span class="lang-en">
+We’ve received your request and our team is reviewing your program details.
+You will receive your secure PIN and sign-in instructions by email within
+<b>24–48 hours</b>.
+</span>
+<span class="lang-es">
+Hemos recibido su solicitud y nuestro equipo está revisando los detalles de su programa.
+Recibirá su PIN seguro e instrucciones de acceso por correo electrónico dentro de
+<b>24–48 horas</b>.
+</span>
+</p>
+
+<div class="next-steps">
+<span class="lang-en"><b>What happens next:</b></span>
+<span class="lang-es"><b>Próximos pasos:</b></span>
+
+<ol>
+<li>
+<span class="lang-en">We verify your team, program, or league information.</span>
+<span class="lang-es">Verificamos la información de su equipo, programa o liga.</span>
+</li>
+<li>
+<span class="lang-en">A private PIN is created and securely assigned to your program.</span>
+<span class="lang-es">Creamos un PIN privado y lo asignamos de forma segura a su programa.</span>
+</li>
+<li>
+<span class="lang-en">
+Your PIN and sign-in instructions will be emailed — usually within <b>24–48 hours</b>.
+</span>
+<span class="lang-es">
+Su PIN e instrucciones de acceso se enviarán por correo — normalmente dentro de
+<b>24–48 horas</b>.
+</span>
+</li>
+</ol>
+</div>
+
+<p class="meta-line">
+<span class="lang-en">
+If you don’t receive your PIN within 48 hours, please check your spam folder or email us at
+</span>
+<span class="lang-es">
+Si no recibe su PIN dentro de 48 horas, revise su carpeta de spam o escríbanos a
+</span>
+<a href="mailto:FiatPalante@gmail.com">FiatPalante@gmail.com</a>.
+</p>
+
+<a href="/index.html" class="back-btn">
+<span class="lang-en">Back to Sign-In</span>
+<span class="lang-es">Volver a Iniciar Sesión</span>
+</a>
+
+</div>
+</div>
+
+<footer>
+© <script>document.write(new Date().getFullYear());</script> Hooporia Institute Inc. — All Rights Reserved.<br>
+EIN: 66-1104700 • UEI: T411JSGE5L65<br>
+Cash Flow Hoops is a project operated by Hooporia Institute Inc.<br>
+<a href="/privacy.html">Privacy Policy</a> •
+<a href="/terms.html">Terms of Use</a> •
+<a href="mailto:FiatPalante@gmail.com">Contact Us</a>
+</footer>
+
+<script>
+(function(){
+const root = document.documentElement;
+const btnEn = document.getElementById('btn-en');
+const btnEs = document.getElementById('btn-es');
+const KEY = 'lang_pin_confirm';
+
+function setLang(lang){
+root.setAttribute('data-lang', lang);
+btnEn.classList.toggle('active', lang==='en');
+btnEs.classList.toggle('active', lang==='es');
+try{ localStorage.setItem(KEY, lang); }catch(_){}
+}
+
+const saved = localStorage.getItem(KEY);
+setLang(saved === 'es' ? 'es' : 'en');
+
+btnEn.onclick = ()=>setLang('en');
+btnEs.onclick = ()=>setLang('es');
+})();
+</script>
+
+</body>
+</html>
