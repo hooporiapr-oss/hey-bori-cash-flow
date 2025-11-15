@@ -816,7 +816,7 @@ function uiHTML(){
 
 return `<!doctype html>
 
-<html lang="en"> data-lang=ën">
+<html lang="en">
 
 <head>
 
@@ -824,7 +824,7 @@ return `<!doctype html>
 
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 
-<title>Cash Flow Hoops</title>
+<title>Basketball Cash Flow</title>
 
 <style>
 
@@ -835,8 +835,6 @@ return `<!doctype html>
 --accent:#2dd4bf; --accent2:#60a5fa; --danger:#f87171;
 
 }
-[data-lang="en"] .lang-es { display: none; }
-[data-lang="es"] .lang-en { display: none; }
 
 *{box-sizing:border-box}
 
@@ -879,28 +877,21 @@ font-size:13px;
 
 
 #helpModal{
-display:none;
-position:fixed;
-inset:0;
-z-index:9999;
-background:rgba(0,0,0,.55);
-padding:20px;
-/* ✅ allow scrolling on small screens */
-overflow-y:auto;
+
+display:none; position:fixed; inset:0; z-index:9999;
+
+background:rgba(0,0,0,.55); padding:20px;
+
 }
 
 #helpCard{
-max-width:680px;
-margin:40px auto;
-background:#0c1016;
-color:#e8edf4;
-border:1px solid #29415f;
-border-radius:12px;
-padding:16px;
+
+max-width:680px; margin:40px auto; background:#0c1016; color:#e8edf4;
+
+border:1px solid #29415f; border-radius:12px; padding:16px;
+
 box-shadow:0 10px 30px rgba(0,0,0,.35);
-/* ✅ keep card bounded & scroll inside the card */
-max-height:80vh;
-overflow-y:auto;
+
 }
 
 #helpCard h3{ margin:0 0 8px 0; font-size:18px }
@@ -916,78 +907,6 @@ border-radius:8px; padding:6px 10px; cursor:pointer;
 }
 
 #helpFooter{ margin-top:10px; font-size:12px; color:#9db3d8 }
-.help-header-row{
-display:flex;
-justify-content:space-between;
-align-items:center;
-gap:8px;
-margin-bottom:4px;
-}
-.help-header-row h3{
-margin:0;
-font-size:18px;
-}
-
-.help-lang-toggle{
-display:inline-flex;
-border-radius:999px;
-border:1px solid #2a3b55;
-overflow:hidden;
-}
-.help-lang-toggle button{
-border:none;
-background:transparent;
-color:#9db3d8;
-padding:4px 10px;
-font-size:11px;
-cursor:pointer;
-}
-.help-lang-toggle button.active{
-background:linear-gradient(90deg,#2dd4bf,#60a5fa);
-color:#041214;
-font-weight:700;
-}
-
-.help-lang-block p,
-.help-lang-block li{
-font-size:14px;
-line-height:1.45;
-}
-.help-title{
-text-align:center;
-margin:0 0 6px 0;
-font-size:18px;
-}
-
-.help-lang-toggle-row{
-display:flex;
-justify-content:center;
-gap:8px;
-margin:4px 0 10px 0;
-}
-
-.help-lang-btn{
-border:1px solid #2a3b55;
-background:#0d1320;
-color:#cfe2ff;
-border-radius:999px;
-padding:4px 12px;
-font-size:12px;
-cursor:pointer;
-}
-
-.help-lang-btn.active{
-background:linear-gradient(90deg,#2dd4bf,#60a5fa);
-color:#041214;
-font-weight:700;
-border:none;
-}
-
-.help-lang-block p,
-.help-lang-block li{
-font-size:14px;
-line-height:1.45;
-}
 
 kbd{
 
@@ -1049,7 +968,7 @@ canvas{width:100%;max-width:680px;height:280px;background:#0d1220;border:1px sol
 
 <h1>
 
-Cash Flow Hoops
+Basketball Cash Flow
 
 <span id="scopePill" class="pill hidden"></span>
 
@@ -1067,6 +986,7 @@ Cash Flow Hoops
 
 <div id="privacyBanner">🔒 Private Space</div>
 
+<div id="helpLink" role="button" tabindex="0" aria-controls="helpModal" aria-expanded="false">Need help?</div>
 
 </header>
 
@@ -1273,6 +1193,76 @@ Cash Flow Hoops
 </section>
 
 
+
+<!-- Help modal -->
+
+<div id="helpModal" aria-hidden="true" aria-label="Help dialog">
+
+<div id="helpCard">
+<button id="helpClose" aria-label="Close help">Close</button>
+
+<!-- ENGLISH -->
+<div class="lang-en">
+<h3>How to use Hoops Ledger</h3>
+
+<p><b>What is this?</b> Hoops Ledger helps your program track income and expenses for teams, leagues, and tournaments — fast, simple, and private.</p>
+
+<ol>
+<li><b>Sign In:</b> Enter your coach/program PIN and click <i>Sign In</i>. You'll see your program name when unlocked.</li>
+<li><b>Add an Entry:</b> Select <i>Type</i>, enter <i>Amount</i>, choose a <i>Category</i>, set the <i>Date</i>, and add optional <i>Team</i>, <i>League</i>, or <i>Note</i>. Click <i>Add Entry</i>.</li>
+<li><b>View the Ledger:</b> Scroll the table to view all entries for your program.</li>
+<li><b>Summaries:</b> Review totals by Category, Team | League, and Program for the selected time range.</li>
+<li><b>Export CSV:</b> Use <i>Download CSV</i> to export data for spreadsheets or sponsor reports.</li>
+</ol>
+
+<p><b>Tips</b></p>
+<ul>
+<li>Each program only sees its own data (private by design).</li>
+<li>Use consistent categories for cleaner summaries.</li>
+<li>You can adjust the date range anytime.</li>
+</ul>
+
+<div id="helpFooter">
+Need more help? Email us at
+<a href="mailto:FiatPalante@gmail.com" style="color:#9fc1ff;text-decoration:underline;">FiatPalante@gmail.com</a>
+— Hooporia Institute Inc.
+</div>
+</div>
+
+<!-- SPANISH PR -->
+<div class="lang-es" style="display:none">
+<h3>Cómo usar Hoops Ledger</h3>
+
+<p><b>¿Qué es esto?</b> Hoops Ledger ayuda a tu programa a llevar el control de ingresos y gastos por equipos, ligas y torneos — rápido, simple y privado.</p>
+
+<ol>
+<li><b>Iniciar Sesión:</b> Entra tu PIN de coach/programa y presiona <i>Sign In</i>. Verás el nombre de tu programa cuando esté desbloqueado.</li>
+<li><b>Añadir Transacción:</b> Selecciona el <i>Tipo</i>, escribe el <i>Monto</i>, escoge la <i>Categoría</i>, pon la <i>Fecha</i>, y añade <i>Equipo</i>, <i>Liga</i> o <i>Nota</i> si es necesario. Luego presiona <i>Add Entry</i>.</li>
+<li><b>Ver el Registro:</b> Revisa la tabla para ver todas las transacciones de tu programa.</li>
+<li><b>Resúmenes:</b> Observa totales por Categoría, Equipo | Liga y Programa para el rango seleccionado.</li>
+<li><b>Exportar CSV:</b> Usa <i>Download CSV</i> para exportar datos para hojas de cálculo o informes a auspiciadores.</li>
+</ol>
+
+<p><b>Consejos</b></p>
+<ul>
+<li>Cada programa solo ve su propia información (privado por diseño).</li>
+<li>Usa categorías consistentes para mejores reportes.</li>
+<li>Puedes ajustar el rango de fechas en cualquier momento.</li>
+</ul>
+
+<div id="helpFooter">
+¿Necesitas ayuda adicional? Escríbenos a
+<a href="mailto:FiatPalante@gmail.com" style="color:#9fc1ff;text-decoration:underline;">FiatPalante@gmail.com</a>
+— Hooporia Institute Inc.
+</div>
+</div>
+
+</div>
+
+</div>
+
+</div>
+
 </main>
 
 
@@ -1422,57 +1412,60 @@ b.style.display='block';
 }
 
 
+
 function openHelp(){
 
+const m = document.getElementById('helpModal');
 
-// ---- Help modal language toggle ----
-(function(){
-const KEY = 'help_lang';
+const l = document.getElementById('helpLink');
 
-function setHelpLang(lang){
-const enBlock = document.querySelector('.help-lang-en');
-const esBlock = document.querySelector('.help-lang-es');
-const titleEn = document.querySelector('.help-title-en');
-const titleEs = document.querySelector('.help-title-es');
-const btnEn = document.getElementById('helpEn');
-const btnEs = document.getElementById('helpEs');
+if (!m) return;
 
-if (!enBlock || !esBlock || !btnEn || !btnEs || !titleEn || !titleEs) return;
+m.style.display = 'block';
 
-if (lang === 'es'){
-enBlock.style.display = 'none';
-esBlock.style.display = 'block';
-titleEn.style.display = 'none';
-titleEs.style.display = 'inline';
-btnEn.classList.remove('active');
-btnEs.classList.add('active');
-} else {
-lang = 'en';
-enBlock.style.display = 'block';
-esBlock.style.display = 'none';
-titleEn.style.display = 'inline';
-titleEs.style.display = 'none';
-btnEn.classList.add('active');
-btnEs.classList.remove('active');
-}
-try{ localStorage.setItem(KEY, lang); }catch(_){}
+m.setAttribute('aria-hidden','false');
+
+if (l) l.setAttribute('aria-expanded','true');
+
 }
 
-function initHelpLang(){
-const btnEn = document.getElementById('helpEn');
-const btnEs = document.getElementById('helpEs');
-if (!btnEn || !btnEs) return;
+function closeHelp(){
 
-const saved = (()=>{ try{return localStorage.getItem(KEY)}catch(_){return null} })();
-setHelpLang(saved === 'es' ? 'es' : 'en');
+const m = document.getElementById('helpModal');
 
-btnEn.addEventListener('click', ()=> setHelpLang('en'));
-btnEs.addEventListener('click', ()=> setHelpLang('es'));
+const l = document.getElementById('helpLink');
+
+if (!m) return;
+
+m.style.display = 'none';
+
+m.setAttribute('aria-hidden','true');
+
+if (l) l.setAttribute('aria-expanded','false');
+
 }
 
-// Initialize once the app UI is loaded
-window.addEventListener('load', initHelpLang);
-})();
+document.addEventListener('click', (e)=>{
+
+if (e.target && e.target.id === 'helpLink') openHelp();
+
+if (e.target && e.target.id === 'helpClose') closeHelp();
+
+if (e.target && e.target.id === 'helpModal') {
+
+if (e.target === document.getElementById('helpModal')) closeHelp();
+
+}
+
+});
+
+document.addEventListener('keydown', (e)=>{
+
+if (e.key === '?') openHelp();
+
+if (e.key === 'Escape') closeHelp();
+
+});
 
 
 
@@ -2071,29 +2064,6 @@ refreshAll();
 }
 
 window.addEventListener('load', loadSession);
-// --- Language switch for Help modal and labels ---
-(function(){
-const root = document.documentElement;
-const KEY = 'cfh_lang'; // Cash Flow Hoops language key
-
-function setLang(lang){
-if (lang !== 'en' && lang !== 'es') lang = 'en';
-root.setAttribute('data-lang', lang);
-try { localStorage.setItem(KEY, lang); } catch(_) {}
-}
-
-// Load saved language or default to EN
-let saved = 'en';
-try {
-const v = localStorage.getItem(KEY);
-if (v === 'es') saved = 'es';
-} catch(_) {}
-setLang(saved);
-
-// OPTIONAL: if later you add EN/ES buttons in the header, you can hook them here:
-// document.getElementById('btn-en')?.addEventListener('click', () => setLang('en'));
-// document.getElementById('btn-es')?.addEventListener('click', () => setLang('es'));
-})();
 
 </script>
 
@@ -2240,4 +2210,5 @@ console.error('Startup store error', e);
 }
 
 });
+
 
