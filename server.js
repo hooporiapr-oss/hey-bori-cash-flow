@@ -953,6 +953,41 @@ font-weight:700;
 font-size:14px;
 line-height:1.45;
 }
+.help-title{
+text-align:center;
+margin:0 0 6px 0;
+font-size:18px;
+}
+
+.help-lang-toggle-row{
+display:flex;
+justify-content:center;
+gap:8px;
+margin:4px 0 10px 0;
+}
+
+.help-lang-btn{
+border:1px solid #2a3b55;
+background:#0d1320;
+color:#cfe2ff;
+border-radius:999px;
+padding:4px 12px;
+font-size:12px;
+cursor:pointer;
+}
+
+.help-lang-btn.active{
+background:linear-gradient(90deg,#2dd4bf,#60a5fa);
+color:#041214;
+font-weight:700;
+border:none;
+}
+
+.help-lang-block p,
+.help-lang-block li{
+font-size:14px;
+line-height:1.45;
+}
 
 kbd{
 
@@ -1242,20 +1277,76 @@ Cash Flow Hoops
 
 <!-- Help modal -->
 
-<div id="helpModal" aria-hidden="true" aria-label="Help dialog">
 <div id="helpCard">
-<button id="helpClose" aria-label="Close help">Close</button>
+<button id="helpClose" aria-label="Close help" class="help-close">×</button>
 
-<div class="help-header-row">
-<h3>
+<h3 class="help-title">
 <span class="help-title-en">How to use Cash Flow Hoops</span>
 <span class="help-title-es" style="display:none;">Cómo usar Cash Flow Hoops</span>
 </h3>
 
-<div class="help-lang-toggle" role="group" aria-label="Help language">
-<button type="button" id="helpEn" class="active">EN</button>
-<button type="button" id="helpEs">ES-PR</button>
+<div class="help-lang-toggle-row" role="group" aria-label="Help language">
+<button type="button" id="helpEn" class="help-lang-btn active">EN</button>
+<button type="button" id="helpEs" class="help-lang-btn">ES-PR</button>
 </div>
+
+<div id="helpContent">
+<!-- ENGLISH HELP -->
+<div class="help-lang-block help-lang-en">
+<p><b>Private Mode:</b> You’re in a locked space. Each coach or program sees only its own data.</p>
+<ol>
+<li><b>Sign In:</b> Enter your PIN and click <i>Sign In</i>. Your program name appears at the top.</li>
+<li><b>Add an Entry:</b> Choose <i>Income</i> or <i>Expense</i>, enter the <i>Amount</i>, pick a <i>Category</i>, set the <i>Date</i>, and optionally add <i>Team</i>, <i>League</i>, and a <i>Note</i>. Then click <i>Add Entry</i>.</li>
+<li><b>Summary & Charts:</b> Use the days range to see totals by category, team | league, and program.</li>
+<li><b>Export CSV:</b> Click <i>Download CSV</i> to export your data for accounting, sponsors, or reports.</li>
+<li><b>Sign Out:</b> When you’re done, click <i>Sign Out</i> at the top-right.</li>
+</ol>
+
+<p><b>Tips</b></p>
+<ul>
+<li>Use clear categories (Registration, Dues, Uniforms, Travel, Tournament, etc.) for clean reports.</li>
+<li>Keep one program PIN per organization and share it only with trusted staff.</li>
+<li>Update entries weekly so your cash flow is always ready for parents and sponsors.</li>
+</ul>
+
+<div id="helpFooter">
+Need more help? Email us at
+<a href="mailto:FiatPalante@gmail.com" target="_blank" rel="noopener noreferrer" style="color:#9fc1ff;text-decoration:underline;">
+FiatPalante@gmail.com
+</a>
+— Cash Flow Hoops • Hooporia Institute Inc.
+</div>
+</div>
+
+<!-- SPANISH (PR) HELP -->
+<div class="help-lang-block help-lang-es" style="display:none;">
+<p><b>Modo privado:</b> Estás en un espacio cerrado. Cada coach o programa solo ve sus propios datos.</p>
+<ol>
+<li><b>Entrar:</b> Escribe tu PIN y haz clic en <i>Sign In</i>. El nombre de tu programa aparece arriba.</li>
+<li><b>Añadir entrada:</b> Escoge <i>Income</i> (ingreso) o <i>Expense</i> (gasto), escribe el <i>Amount</i>, selecciona la <i>Category</i>, pon la <i>Date</i> y, si deseas, añade <i>Team</i>, <i>League</i> y una <i>Note</i>. Luego haz clic en <i>Add Entry</i>.</li>
+<li><b>Resumen y gráficas:</b> Usa el rango en días para ver totales por categoría, equipo | liga y programa.</li>
+<li><b>Exportar CSV:</b> Haz clic en <i>Download CSV</i> para exportar los datos para contabilidad, auspiciadores o informes.</li>
+<li><b>Salir:</b> Cuando termines, usa el botón de <i>Sign Out</i> arriba a la derecha.</li>
+</ol>
+
+<p><b>Tips</b></p>
+<ul>
+<li>Usa categorías claras (Registration, Dues, Uniforms, Travel, Tournament, etc.) para que los reportes se mantengan limpios.</li>
+<li>Mantén un solo PIN de programa por organización y compártelo solo con personal de confianza.</li>
+<li>Actualiza las entradas semanalmente para que tu flujo de caja siempre esté listo para padres y auspiciadores.</li>
+</ul>
+
+<div id="helpFooter">
+¿Necesitas más ayuda? Escríbenos a
+<a href="mailto:FiatPalante@gmail.com" target="_blank" rel="noopener noreferrer" style="color:#9fc1ff;text-decoration:underline;">
+FiatPalante@gmail.com
+</a>
+— Cash Flow Hoops • Hooporia Institute Inc.
+</div>
+</div>
+</div>
+</div>
+
 </div>
 
 <div id="helpContent">
