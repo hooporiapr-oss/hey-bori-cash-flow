@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Request Received — Cash Flow Hoops</title>
-<meta name="description" content="Your Cash Flow Hoops PIN request has been received. Review and approval typically takes 24–48 hours." />
+<title>PIN Request Received — Cash Flow Hoops</title>
+<meta name="description" content="Confirmation page for teams and leagues who requested a secure program PIN to access Cash Flow Hoops." />
 <meta name="theme-color" content="#0e1116" />
 
 <style>
@@ -18,200 +18,297 @@ margin:0;
 font-family:system-ui,-apple-system,Segoe UI,Inter,Roboto,Arial,sans-serif;
 color:var(--text);
 background:linear-gradient(180deg,#0b0f14,#0e1116);
+-webkit-font-smoothing:antialiased;
+-moz-osx-font-smoothing:grayscale;
 }
+a{color:#9fc1ff;text-decoration:underline}
+
 .wrap{
-max-width:800px;
+max-width:1100px;
 margin:0 auto;
-padding:40px 20px;
+padding:0 20px 40px;
 }
 
 /* HEADER */
 header{
-text-align:center;
-padding:20px 0 14px;
+position:sticky;
+top:0;
+z-index:10;
+backdrop-filter:saturate(140%) blur(6px);
+background:rgba(10,14,20,.55);
 border-bottom:1px solid var(--line);
 }
+.nav{
+display:flex;
+align-items:center;
+justify-content:space-between;
+padding:14px 0;
+gap:12px;
+}
+.brand{
+display:flex;
+gap:10px;
+align-items:center;
+text-decoration:none;
+color:inherit;
+}
 .logo{
-height:46px;
+height:42px;
 width:auto;
 border-radius:6px;
+}
+@media(max-width:600px){
+.logo{height:34px}
 }
 .title{
 font-weight:800;
 letter-spacing:.2px;
-margin-top:8px;
-font-size:20px;
+}
+.badge{
+font-size:12px;
+color:var(--muted);
 }
 
 /* LANGUAGE TOGGLE */
 .lang-toggle{
 display:flex;
-justify-content:center;
 gap:8px;
-margin-top:12px;
+margin-left:auto;
 }
 .lang-toggle button{
 border:1px solid #2a3b55;
 background:#0d1320;
 color:#cfe2ff;
 border-radius:20px;
-padding:6px 12px;
+padding:6px 10px;
 cursor:pointer;
 font-size:12px;
 }
 .lang-toggle button.active{
 background:linear-gradient(90deg,var(--accent),var(--accent2));
-color:#06221f;
-font-weight:800;
+color:var(--ctaTxt);
 border:none;
+font-weight:800;
 }
 
 [data-lang="en"] .lang-es{display:none}
 [data-lang="es"] .lang-en{display:none}
 
-/* CARD */
+/* PAGE CONTENT */
+main{
+padding-top:28px;
+}
+.hero{
+max-width:780px;
+margin:0 auto 24px;
+}
+h1.hero-title{
+margin:0 0 10px 0;
+font-size:clamp(26px,4vw,32px);
+display:flex;
+align-items:center;
+gap:10px;
+flex-wrap:wrap;
+}
+.hero-icon{
+font-size:24px;
+}
+p.hero-text{
+margin:0 0 14px 0;
+color:var(--muted);
+max-width:720px;
+}
+.meta-line{
+font-size:13px;
+color:var(--muted);
+margin-top:4px;
+}
+
+.card-shell{
+max-width:780px;
+margin:0 auto 40px;
+}
 .card{
 background:var(--card);
 border:1px solid var(--line);
 border-radius:14px;
-padding:26px;
-margin-top:28px;
+padding:18px 18px 16px 18px;
 box-shadow:0 10px 26px rgba(0,0,0,.28);
 }
-.card h1{
-margin:0 0 12px;
-font-size:26px;
-font-weight:800;
+h2{
+margin:0 0 10px 0;
+font-size:18px;
 }
-.subline{
+p{
+margin:0 0 10px 0;
 color:var(--muted);
-margin:0 0 20px;
-font-size:15px;
-line-height:1.6;
+line-height:1.5;
 }
-.next-steps{
-margin-top:18px;
-}
-.next-steps ol{
-padding-left:22px;
-margin:6px 0;
+ul{
+margin:0 0 10px 20px;
+padding:0;
 color:var(--muted);
 }
-.next-steps li{
-margin:6px 0;
-}
-.meta-line{
-margin-top:20px;
-font-size:13px;
-color:var(--muted);
+li{
+margin:4px 0;
 }
 
-/* BACK BUTTON */
-.back-btn{
+.cta-row{
+display:flex;
+flex-wrap:wrap;
+gap:10px;
+margin-top:14px;
+}
+.btn-primary,
+.btn-secondary{
 display:inline-block;
-margin-top:26px;
-padding:12px 18px;
-border-radius:12px;
-font-weight:900;
-font-size:15px;
-background:linear-gradient(90deg,var(--accent),var(--accent2));
-color:#06221f;
+padding:10px 16px;
+border-radius:10px;
+font-size:14px;
 text-decoration:none;
+text-align:center;
+cursor:pointer;
+border:1px solid #2a3b55;
+}
+.btn-primary{
+background:linear-gradient(90deg,var(--accent),var(--accent2));
+color:var(--ctaTxt);
+font-weight:800;
+border-color:#1b2c3f;
+}
+.btn-secondary{
+background:#0d1320;
+color:#cfe2ff;
 }
 
 /* FOOTER */
 footer{
-margin-top:40px;
 border-top:1px solid var(--line);
-padding:20px;
-text-align:center;
-font-size:13px;
 color:var(--muted);
+font-size:13px;
+text-align:center;
+padding:20px;
+margin-top:10px;
 }
-footer a{color:#9fc1ff;text-decoration:underline}
+footer a{
+color:#9fc1ff;
+text-decoration:underline;
+}
 </style>
 </head>
-
 <body>
-
 <header>
-<img src="/images/hooporia-logo.png" class="logo" alt="Hooporia Institute Inc. Logo">
+<div class="wrap nav">
+<a href="/index.html" class="brand" aria-label="Back to Cash Flow Hoops home">
+<img src="/images/hooporia-logo.png" alt="Hooporia Institute Inc. Logo" class="logo" />
+<div>
 <div class="title">Cash Flow Hoops</div>
+<div class="badge">
+<span class="lang-en">by Hooporia Institute Inc.</span>
+<span class="lang-es">por Hooporia Institute Inc.</span>
+</div>
+</div>
+</a>
 
-<div class="lang-toggle">
-<button id="btn-en" class="active">EN</button>
-<button id="btn-es">ES (PR)</button>
+<div class="lang-toggle" role="group" aria-label="Language">
+<button id="btn-en" class="active" aria-pressed="true">EN</button>
+<button id="btn-es" aria-pressed="false">ES-PR</button>
+</div>
 </div>
 </header>
 
+<main>
 <div class="wrap">
-<div class="card">
-
-<h1>
-<span class="lang-en">Request Received</span>
-<span class="lang-es">Solicitud Recibida</span>
+<section class="hero">
+<h1 class="hero-title">
+<span class="hero-icon">✅</span>
+<span class="lang-en">PIN Request Received</span>
+<span class="lang-es">Solicitud de PIN recibida</span>
 </h1>
-
-<p class="subline">
+<p class="hero-text">
 <span class="lang-en">
-We’ve received your request and our team is reviewing your program details.
-You will receive your secure PIN and sign-in instructions by email within
-<b>24–48 hours</b>.
+Thank you for requesting secure access to <b>Cash Flow Hoops</b>. Your form has been submitted.
+Our team will review your program details and issue a PIN if approved.
 </span>
 <span class="lang-es">
-Hemos recibido su solicitud y nuestro equipo está revisando los detalles de su programa.
-Recibirá su PIN seguro e instrucciones de acceso por correo electrónico dentro de
-<b>24–48 horas</b>.
+Gracias por solicitar acceso seguro a <b>Cash Flow Hoops</b>. Su formulario ha sido enviado.
+Nuestro equipo revisará los detalles de su programa y emitirá un PIN si es aprobado.
 </span>
 </p>
-
-<div class="next-steps">
-<span class="lang-en"><b>What happens next:</b></span>
-<span class="lang-es"><b>Próximos pasos:</b></span>
-
-<ol>
-<li>
-<span class="lang-en">We verify your team, program, or league information.</span>
-<span class="lang-es">Verificamos la información de su equipo, programa o liga.</span>
-</li>
-<li>
-<span class="lang-en">A private PIN is created and securely assigned to your program.</span>
-<span class="lang-es">Creamos un PIN privado y lo asignamos de forma segura a su programa.</span>
-</li>
-<li>
-<span class="lang-en">
-Your PIN and sign-in instructions will be emailed — usually within <b>24–48 hours</b>.
-</span>
-<span class="lang-es">
-Su PIN e instrucciones de acceso se enviarán por correo — normalmente dentro de
-<b>24–48 horas</b>.
-</span>
-</li>
-</ol>
-</div>
-
 <p class="meta-line">
+<span class="lang-en">You’ll receive a confirmation email at the address you provided.</span>
+<span class="lang-es">Recibirá un correo de confirmación a la dirección que nos proveyó.</span>
+</p>
+</section>
+
+<section class="card-shell">
+<div class="card">
+<h2>
+<span class="lang-en">What happens next?</span>
+<span class="lang-es">¿Qué sucede ahora?</span>
+</h2>
+<p>
 <span class="lang-en">
-If you don’t receive your PIN within 48 hours, please check your spam folder or email us at
+We typically review requests within a short time window. If your program is approved,
+you will receive:
 </span>
 <span class="lang-es">
-Si no recibe su PIN dentro de 48 horas, revise su carpeta de spam o escríbanos a
+Normalmente revisamos las solicitudes en poco tiempo. Si su programa es aprobado,
+recibirá:
 </span>
-<a href="mailto:FiatPalante@gmail.com">FiatPalante@gmail.com</a>.
+</p>
+<ul>
+<li>
+<span class="lang-en"><b>Your secure program PIN</b> for Cash Flow Hoops.</span>
+<span class="lang-es"><b>Su PIN seguro de programa</b> para Cash Flow Hoops.</span>
+</li>
+<li>
+<span class="lang-en">Simple steps on how to sign in and start tracking cash flow.</span>
+<span class="lang-es">Pasos sencillos para entrar y comenzar a registrar su flujo de efectivo.</span>
+</li>
+<li>
+<span class="lang-en">Optional tips for organizing teams, leagues, and categories.</span>
+<span class="lang-es">Consejos opcionales para organizar equipos, ligas y categorías.</span>
+</li>
+</ul>
+
+<h2>
+<span class="lang-en">If you don’t see the email</span>
+<span class="lang-es">Si no ve el correo electrónico</span>
+</h2>
+<p>
+<span class="lang-en">
+Please check your spam or promotions folder. If you still don’t see a response after a reasonable time,
+you can reach out directly:
+</span>
+<span class="lang-es">
+Por favor revise el buzón de spam o promociones. Si aún no ve una respuesta después de un tiempo razonable,
+puede escribirnos directamente:
+</span>
+</p>
+<p>
+📧 <a href="mailto:FiatPalante@gmail.com">FiatPalante@gmail.com</a>
 </p>
 
-<a href="/index.html" class="back-btn">
+<div class="cta-row">
+<a href="/" class="btn-primary">
 <span class="lang-en">Back to Sign-In</span>
-<span class="lang-es">Volver a Iniciar Sesión</span>
+<span class="lang-es">Volver al inicio de sesión</span>
 </a>
-
+<a href="mailto:FiatPalante@gmail.com" class="btn-secondary">
+<span class="lang-en">Contact Support</span>
+<span class="lang-es">Contactar soporte</span>
+</a>
 </div>
 </div>
+</section>
+</div>
+</main>
 
 <footer>
 © <script>document.write(new Date().getFullYear());</script> Hooporia Institute Inc. — All Rights Reserved.<br>
 EIN: 66-1104700 • UEI: T411JSGE5L65<br>
-Cash Flow Hoops is a project operated by Hooporia Institute Inc.<br>
+Cash Flow Hoops is a project operated by Hooporia Institute Inc., a nonprofit organization dedicated to advancing youth basketball transparency and development.<br>
 <a href="/privacy.html">Privacy Policy</a> •
 <a href="/terms.html">Terms of Use</a> •
 <a href="mailto:FiatPalante@gmail.com">Contact Us</a>
@@ -222,22 +319,23 @@ Cash Flow Hoops is a project operated by Hooporia Institute Inc.<br>
 const root = document.documentElement;
 const btnEn = document.getElementById('btn-en');
 const btnEs = document.getElementById('btn-es');
-const KEY = 'lang_pin_confirm';
+const KEY = 'lang_pin_confirmed';
 
 function setLang(lang){
 root.setAttribute('data-lang', lang);
-btnEn.classList.toggle('active', lang==='en');
-btnEs.classList.toggle('active', lang==='es');
+btnEn.classList.toggle('active', lang === 'en');
+btnEs.classList.toggle('active', lang === 'es');
+btnEn.setAttribute('aria-pressed', lang === 'en');
+btnEs.setAttribute('aria-pressed', lang === 'es');
 try{ localStorage.setItem(KEY, lang); }catch(_){}
 }
 
-const saved = localStorage.getItem(KEY);
+const saved = (()=>{ try{return localStorage.getItem(KEY)}catch(_){return null} })();
 setLang(saved === 'es' ? 'es' : 'en');
 
-btnEn.onclick = ()=>setLang('en');
-btnEs.onclick = ()=>setLang('es');
+btnEn.addEventListener('click', ()=>setLang('en'));
+btnEs.addEventListener('click', ()=>setLang('es'));
 })();
 </script>
-
 </body>
 </html>
