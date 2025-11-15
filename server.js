@@ -816,7 +816,7 @@ function uiHTML(){
 
 return `<!doctype html>
 
-<html lang="en">
+<html lang="en"> data-lang=ën">
 
 <head>
 
@@ -835,6 +835,8 @@ return `<!doctype html>
 --accent:#2dd4bf; --accent2:#60a5fa; --danger:#f87171;
 
 }
+[data-lang="en"] .lang-es { display: none; }
+[data-lang="es"] .lang-en { display: none; }
 
 *{box-sizing:border-box}
 
@@ -2064,6 +2066,29 @@ refreshAll();
 }
 
 window.addEventListener('load', loadSession);
+// --- Language switch for Help modal and labels ---
+(function(){
+const root = document.documentElement;
+const KEY = 'cfh_lang'; // Cash Flow Hoops language key
+
+function setLang(lang){
+if (lang !== 'en' && lang !== 'es') lang = 'en';
+root.setAttribute('data-lang', lang);
+try { localStorage.setItem(KEY, lang); } catch(_) {}
+}
+
+// Load saved language or default to EN
+let saved = 'en';
+try {
+const v = localStorage.getItem(KEY);
+if (v === 'es') saved = 'es';
+} catch(_) {}
+setLang(saved);
+
+// OPTIONAL: if later you add EN/ES buttons in the header, you can hook them here:
+// document.getElementById('btn-en')?.addEventListener('click', () => setLang('en'));
+// document.getElementById('btn-es')?.addEventListener('click', () => setLang('es'));
+})();
 
 </script>
 
