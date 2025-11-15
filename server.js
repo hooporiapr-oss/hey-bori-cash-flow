@@ -986,7 +986,6 @@ Basketball Cash Flow
 
 <div id="privacyBanner">🔒 Private Space</div>
 
-<div id="helpLink" role="button" tabindex="0" aria-controls="helpModal" aria-expanded="false">Need help?</div>
 
 </header>
 
